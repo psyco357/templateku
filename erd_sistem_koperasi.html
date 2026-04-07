@@ -1,0 +1,154 @@
+
+<style>
+#erd svg { max-width: 100%; }
+#erd svg.erDiagram .divider path { stroke-opacity: 0.5; }
+#erd svg.erDiagram .row-rect-odd path,
+#erd svg.erDiagram .row-rect-odd rect,
+#erd svg.erDiagram .row-rect-even path,
+#erd svg.erDiagram .row-rect-even rect { stroke: none !important; }
+</style>
+<div id="erd" style="padding: 1rem 0;"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"Anthropic Sans", sans-serif',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '13px',
+    fontFamily: '"Anthropic Sans", sans-serif',
+    lineColor: dark ? '#9c9a92' : '#73726c',
+    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+    primaryColor: dark ? '#2a2a40' : '#eeedfe',
+    primaryBorderColor: dark ? '#534AB7' : '#534AB7',
+    primaryTextColor: dark ? '#c2c0b6' : '#26215C',
+  },
+});
+
+const diagram = `erDiagram
+  ANGGOTA {
+    int id_anggota PK
+    string no_anggota
+    string nama
+    string nik
+    string alamat
+    string telepon
+    date tgl_bergabung
+    string status
+  }
+  SIMPANAN {
+    int id_simpanan PK
+    int id_anggota FK
+    int id_jenis_simpanan FK
+    decimal jumlah
+    date tgl_transaksi
+    string keterangan
+  }
+  JENIS_SIMPANAN {
+    int id_jenis PK
+    string nama_jenis
+    decimal bunga_persen
+    string keterangan
+  }
+  PINJAMAN {
+    int id_pinjaman PK
+    int id_anggota FK
+    decimal jumlah_pinjam
+    decimal bunga_persen
+    int tenor_bulan
+    date tgl_pinjam
+    date tgl_jatuh_tempo
+    string status
+  }
+  ANGSURAN {
+    int id_angsuran PK
+    int id_pinjaman FK
+    int ke_berapa
+    decimal jumlah_bayar
+    decimal pokok
+    decimal bunga
+    date tgl_bayar
+    string status
+  }
+  PRODUK {
+    int id_produk PK
+    string nama_produk
+    string satuan
+    decimal harga_beli
+    decimal harga_jual
+    int stok
+  }
+  TRANSAKSI_TOKO {
+    int id_transaksi PK
+    int id_anggota FK
+    date tgl_transaksi
+    decimal total
+    string metode_bayar
+  }
+  DETAIL_TRANSAKSI {
+    int id_detail PK
+    int id_transaksi FK
+    int id_produk FK
+    int qty
+    decimal harga_satuan
+    decimal subtotal
+  }
+  PENGURUS {
+    int id_pengurus PK
+    int id_anggota FK
+    string jabatan
+    date periode_mulai
+    date periode_selesai
+  }
+  SHU {
+    int id_shu PK
+    int id_anggota FK
+    int tahun
+    decimal total_shu
+    decimal shu_simpanan
+    decimal shu_pinjaman
+    decimal shu_toko
+    string status
+  }
+
+  ANGGOTA ||--o{ SIMPANAN : "memiliki"
+  JENIS_SIMPANAN ||--o{ SIMPANAN : "dikategorikan"
+  ANGGOTA ||--o{ PINJAMAN : "mengajukan"
+  PINJAMAN ||--o{ ANGSURAN : "dibayar via"
+  ANGGOTA ||--o{ TRANSAKSI_TOKO : "melakukan"
+  TRANSAKSI_TOKO ||--o{ DETAIL_TRANSAKSI : "memuat"
+  PRODUK ||--o{ DETAIL_TRANSAKSI : "termasuk dalam"
+  ANGGOTA ||--o| PENGURUS : "menjadi"
+  ANGGOTA ||--o{ SHU : "menerima"
+`;
+
+const { svg } = await mermaid.render('erd-svg', diagram);
+document.getElementById('erd').innerHTML = svg;
+
+document.querySelectorAll('#erd svg.erDiagram .node').forEach(node => {
+  const firstPath = node.querySelector('path[d]');
+  if (!firstPath) return;
+  const d = firstPath.getAttribute('d');
+  const nums = d.match(/-?[\d.]+/g)?.map(Number);
+  if (!nums || nums.length < 8) return;
+  const xs = [nums[0], nums[2], nums[4], nums[6]];
+  const ys = [nums[1], nums[3], nums[5], nums[7]];
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('x', x); rect.setAttribute('y', y);
+  rect.setAttribute('width', w); rect.setAttribute('height', h);
+  rect.setAttribute('rx', '8');
+  for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
+    if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
+  }
+  firstPath.replaceWith(rect);
+});
+
+document.querySelectorAll('#erd svg.erDiagram .row-rect-odd path, #erd svg.erDiagram .row-rect-even path').forEach(p => {
+  p.setAttribute('stroke', 'none');
+});
+</script>
