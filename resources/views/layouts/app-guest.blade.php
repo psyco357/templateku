@@ -4,6 +4,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+    <link rel="alternate icon" href="{{ asset('favicon.ico') }}">
     <title>{{ config('app.name') }} - Cara Lebih Baik Kelola Payroll & Absensi Karyawan</title>
     <meta name="description" content="Software absensi dan payroll terbaik untuk kelola karyawan, gaji, cuti, dan HR dalam satu sistem terintegrasi.">
 

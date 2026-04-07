@@ -57,4 +57,24 @@ class Koperasi extends Model
     {
         return $this->hasMany(Simpanan::class);
     }
+
+    public function akunKeuangan(): HasMany
+    {
+        return $this->hasMany(AkunKeuangan::class);
+    }
+
+    public function jurnalUmum(): HasMany
+    {
+        return $this->hasMany(JurnalUmum::class);
+    }
+
+    public function akunMappings(): HasMany
+    {
+        return $this->hasMany(AkunKeuanganMapping::class);
+    }
+
+    public function shuPayments(): HasMany
+    {
+        return $this->hasMany(ShuPayment::class);
+    }
 }

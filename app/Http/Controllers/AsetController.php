@@ -5,16 +5,20 @@ namespace App\Http\Controllers;
 use App\Models\AsetKoperasi;
 use App\Models\Koperasi;
 use App\Models\PeriodeBuku;
+use App\Services\JournalPostingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class AsetController extends Controller
 {
+    public function __construct(protected JournalPostingService $journalPostingService) {}
+
     public function index(Request $request): View
     {
         $koperasi = $this->getActiveKoperasi();
@@ -88,19 +92,23 @@ class AsetController extends Controller
             'keterangan' => 'keterangan',
         ]);
 
-        AsetKoperasi::query()->create([
-            'koperasi_id' => $koperasi->id,
-            'periode_buku_id' => $this->resolvePeriodeBukuId($koperasi, $validated['tanggal_perolehan']),
-            'kode_aset' => $this->generateAssetCode($koperasi, $validated['tanggal_perolehan']),
-            'nama_aset' => $validated['nama_aset'],
-            'jenis_aset' => $validated['jenis_aset'],
-            'tanggal_perolehan' => $validated['tanggal_perolehan'],
-            'nilai_perolehan' => $validated['nilai_perolehan'],
-            'kuantitas' => $validated['kuantitas'] ?? null,
-            'satuan' => $validated['satuan'] ?? null,
-            'status' => AsetKoperasi::STATUS_AKTIF,
-            'keterangan' => $validated['keterangan'] ?? null,
-        ]);
+        DB::transaction(function () use ($koperasi, $validated, $request, &$aset) {
+            $aset = AsetKoperasi::query()->create([
+                'koperasi_id' => $koperasi->id,
+                'periode_buku_id' => $this->resolvePeriodeBukuId($koperasi, $validated['tanggal_perolehan']),
+                'kode_aset' => $this->generateAssetCode($koperasi, $validated['tanggal_perolehan']),
+                'nama_aset' => $validated['nama_aset'],
+                'jenis_aset' => $validated['jenis_aset'],
+                'tanggal_perolehan' => $validated['tanggal_perolehan'],
+                'nilai_perolehan' => $validated['nilai_perolehan'],
+                'kuantitas' => $validated['kuantitas'] ?? null,
+                'satuan' => $validated['satuan'] ?? null,
+                'status' => AsetKoperasi::STATUS_AKTIF,
+                'keterangan' => $validated['keterangan'] ?? null,
+            ]);
+
+            $this->journalPostingService->syncAsetPerolehan($aset, $request->user()?->id);
+        });
 
         return redirect()->route('aset.index')->with([
             'status' => 'Aset koperasi berhasil dicatat.',
@@ -140,16 +148,20 @@ class AsetController extends Controller
             'keterangan' => 'keterangan',
         ]);
 
-        $aset->update([
-            'periode_buku_id' => $this->resolvePeriodeBukuId($koperasi, $validated['tanggal_perolehan']),
-            'nama_aset' => $validated['nama_aset'],
-            'jenis_aset' => $validated['jenis_aset'],
-            'tanggal_perolehan' => $validated['tanggal_perolehan'],
-            'nilai_perolehan' => $validated['nilai_perolehan'],
-            'kuantitas' => $validated['kuantitas'] ?? null,
-            'satuan' => $validated['satuan'] ?? null,
-            'keterangan' => $validated['keterangan'] ?? null,
-        ]);
+        DB::transaction(function () use ($aset, $koperasi, $validated, $request) {
+            $aset->update([
+                'periode_buku_id' => $this->resolvePeriodeBukuId($koperasi, $validated['tanggal_perolehan']),
+                'nama_aset' => $validated['nama_aset'],
+                'jenis_aset' => $validated['jenis_aset'],
+                'tanggal_perolehan' => $validated['tanggal_perolehan'],
+                'nilai_perolehan' => $validated['nilai_perolehan'],
+                'kuantitas' => $validated['kuantitas'] ?? null,
+                'satuan' => $validated['satuan'] ?? null,
+                'keterangan' => $validated['keterangan'] ?? null,
+            ]);
+
+            $this->journalPostingService->syncAsetPerolehan($aset, $request->user()?->id);
+        });
 
         return redirect()->route('aset.index')->with([
             'status' => 'Data aset berhasil diperbarui.',
@@ -194,13 +206,17 @@ class AsetController extends Controller
                 : (float) $aset->nilai_perolehan)
             : null;
 
-        $aset->update([
-            'periode_buku_id' => $this->resolvePeriodeBukuId($koperasi, $validated['tanggal_nonaktif']),
-            'status' => AsetKoperasi::STATUS_NONAKTIF,
-            'tanggal_nonaktif' => $validated['tanggal_nonaktif'],
-            'tipe_nonaktif' => $validated['tipe_nonaktif'],
-            'nilai_pelepasan' => $nilaiPelepasan,
-        ]);
+        DB::transaction(function () use ($aset, $koperasi, $validated, $nilaiPelepasan, $request) {
+            $aset->update([
+                'periode_buku_id' => $this->resolvePeriodeBukuId($koperasi, $validated['tanggal_nonaktif']),
+                'status' => AsetKoperasi::STATUS_NONAKTIF,
+                'tanggal_nonaktif' => $validated['tanggal_nonaktif'],
+                'tipe_nonaktif' => $validated['tipe_nonaktif'],
+                'nilai_pelepasan' => $nilaiPelepasan,
+            ]);
+
+            $this->journalPostingService->syncAsetDisposal($aset, $request->user()?->id);
+        });
 
         return redirect()->route('aset.index')->with([
             'status' => $isSale

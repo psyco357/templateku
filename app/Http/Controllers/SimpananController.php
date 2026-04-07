@@ -9,6 +9,7 @@ use App\Models\PeriodeBuku;
 use App\Models\Simpanan;
 use App\Models\SimpananAudit;
 use App\Models\User;
+use App\Services\JournalPostingService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +25,8 @@ use Illuminate\View\View;
 
 class SimpananController extends Controller
 {
+    public function __construct(protected JournalPostingService $journalPostingService) {}
+
     public function index(Request $request): View
     {
         $koperasi = $this->getActiveKoperasi();
@@ -207,30 +210,35 @@ class SimpananController extends Controller
             (float) $validated['jumlah']
         );
 
-        $simpanan = Simpanan::query()->create([
-            'koperasi_id' => $koperasi->id,
-            'anggota_id' => $anggota->id,
-            'jenis_simpanan_id' => $validated['jenis_simpanan_id'],
-            'periode_buku_id' => $this->resolvePeriodeBukuId($koperasi, $validated['tanggal_transaksi']),
-            'no_bukti' => $this->generateReceiptNumber($koperasi, $validated['tanggal_transaksi']),
-            'jumlah' => $this->normalizeSignedAmount($validated['tipe_transaksi'], (float) $validated['jumlah']),
-            'tanggal_transaksi' => $validated['tanggal_transaksi'],
-            'status' => Simpanan::STATUS_POSTED,
-            'keterangan' => $validated['keterangan'],
-        ]);
-
-        $this->recordAudit(
-            $simpanan,
-            SimpananAudit::ACTION_CREATE,
-            'Transaksi simpanan dibuat.',
-            [
+        DB::transaction(function () use ($koperasi, $anggota, $validated, $request, &$simpanan) {
+            $simpanan = Simpanan::query()->create([
+                'koperasi_id' => $koperasi->id,
                 'anggota_id' => $anggota->id,
-                'jenis_simpanan_id' => (int) $validated['jenis_simpanan_id'],
-                'tipe_transaksi' => $validated['tipe_transaksi'],
+                'jenis_simpanan_id' => $validated['jenis_simpanan_id'],
+                'periode_buku_id' => $this->resolvePeriodeBukuId($koperasi, $validated['tanggal_transaksi']),
+                'no_bukti' => $this->generateReceiptNumber($koperasi, $validated['tanggal_transaksi']),
                 'jumlah' => $this->normalizeSignedAmount($validated['tipe_transaksi'], (float) $validated['jumlah']),
                 'tanggal_transaksi' => $validated['tanggal_transaksi'],
-            ]
-        );
+                'status' => Simpanan::STATUS_POSTED,
+                'keterangan' => $validated['keterangan'],
+            ]);
+
+            $this->recordAudit(
+                $simpanan,
+                SimpananAudit::ACTION_CREATE,
+                'Transaksi simpanan dibuat.',
+                [
+                    'anggota_id' => $anggota->id,
+                    'jenis_simpanan_id' => (int) $validated['jenis_simpanan_id'],
+                    'tipe_transaksi' => $validated['tipe_transaksi'],
+                    'jumlah' => $this->normalizeSignedAmount($validated['tipe_transaksi'], (float) $validated['jumlah']),
+                    'tanggal_transaksi' => $validated['tanggal_transaksi'],
+                ]
+            );
+
+            $simpanan->loadMissing(['anggota.profile', 'jenisSimpanan']);
+            $this->journalPostingService->syncSimpanan($simpanan, $request->user()?->id);
+        });
 
         return redirect()->route('simpanan.transaksi')->with([
             'status' => 'Transaksi simpanan berhasil disimpan.',
@@ -285,31 +293,36 @@ class SimpananController extends Controller
             'keterangan' => $simpanan->keterangan,
         ];
 
-        $simpanan->update([
-            'anggota_id' => $anggota->id,
-            'jenis_simpanan_id' => $validated['jenis_simpanan_id'],
-            'periode_buku_id' => $this->resolvePeriodeBukuId($koperasi, $validated['tanggal_transaksi']),
-            'no_bukti' => $simpanan->no_bukti ?: $this->generateReceiptNumber($koperasi, $validated['tanggal_transaksi']),
-            'jumlah' => $this->normalizeSignedAmount($validated['tipe_transaksi'], (float) $validated['jumlah']),
-            'tanggal_transaksi' => $validated['tanggal_transaksi'],
-            'keterangan' => $validated['keterangan'],
-        ]);
+        DB::transaction(function () use ($simpanan, $anggota, $validated, $koperasi, $before, $request) {
+            $simpanan->update([
+                'anggota_id' => $anggota->id,
+                'jenis_simpanan_id' => $validated['jenis_simpanan_id'],
+                'periode_buku_id' => $this->resolvePeriodeBukuId($koperasi, $validated['tanggal_transaksi']),
+                'no_bukti' => $simpanan->no_bukti ?: $this->generateReceiptNumber($koperasi, $validated['tanggal_transaksi']),
+                'jumlah' => $this->normalizeSignedAmount($validated['tipe_transaksi'], (float) $validated['jumlah']),
+                'tanggal_transaksi' => $validated['tanggal_transaksi'],
+                'keterangan' => $validated['keterangan'],
+            ]);
 
-        $this->recordAudit(
-            $simpanan,
-            SimpananAudit::ACTION_UPDATE,
-            'Transaksi simpanan diperbarui.',
-            [
-                'before' => $before,
-                'after' => [
-                    'anggota_id' => $simpanan->anggota_id,
-                    'jenis_simpanan_id' => $simpanan->jenis_simpanan_id,
-                    'tanggal_transaksi' => optional($simpanan->tanggal_transaksi)->format('Y-m-d'),
-                    'jumlah' => (float) $simpanan->jumlah,
-                    'keterangan' => $simpanan->keterangan,
-                ],
-            ]
-        );
+            $this->recordAudit(
+                $simpanan,
+                SimpananAudit::ACTION_UPDATE,
+                'Transaksi simpanan diperbarui.',
+                [
+                    'before' => $before,
+                    'after' => [
+                        'anggota_id' => $simpanan->anggota_id,
+                        'jenis_simpanan_id' => $simpanan->jenis_simpanan_id,
+                        'tanggal_transaksi' => optional($simpanan->tanggal_transaksi)->format('Y-m-d'),
+                        'jumlah' => (float) $simpanan->jumlah,
+                        'keterangan' => $simpanan->keterangan,
+                    ],
+                ]
+            );
+
+            $simpanan->loadMissing(['anggota.profile', 'jenisSimpanan']);
+            $this->journalPostingService->syncSimpanan($simpanan, $request->user()?->id);
+        });
 
         return redirect()->route('simpanan.show', $simpanan)->with([
             'status' => 'Transaksi simpanan berhasil diperbarui.',
@@ -338,20 +351,24 @@ class SimpananController extends Controller
 
         $catatanBatal = trim(($simpanan->keterangan ? $simpanan->keterangan . PHP_EOL : '') . 'Dibatalkan pada ' . now()->format('d-m-Y H:i') . ($validated['alasan_batal'] ? ' - ' . $validated['alasan_batal'] : ''));
 
-        $simpanan->update([
-            'status' => Simpanan::STATUS_BATAL,
-            'keterangan' => $catatanBatal,
-        ]);
+        DB::transaction(function () use ($simpanan, $catatanBatal, $validated, $request) {
+            $simpanan->update([
+                'status' => Simpanan::STATUS_BATAL,
+                'keterangan' => $catatanBatal,
+            ]);
 
-        $this->recordAudit(
-            $simpanan,
-            SimpananAudit::ACTION_CANCEL,
-            'Transaksi simpanan dibatalkan.',
-            [
-                'alasan_batal' => $validated['alasan_batal'] ?? null,
-                'status' => $simpanan->status,
-            ]
-        );
+            $this->recordAudit(
+                $simpanan,
+                SimpananAudit::ACTION_CANCEL,
+                'Transaksi simpanan dibatalkan.',
+                [
+                    'alasan_batal' => $validated['alasan_batal'] ?? null,
+                    'status' => $simpanan->status,
+                ]
+            );
+
+            $this->journalPostingService->syncSimpanan($simpanan, $request->user()?->id);
+        });
 
         return redirect()->route('simpanan.transaksi')->with([
             'status' => 'Transaksi simpanan berhasil dibatalkan.',

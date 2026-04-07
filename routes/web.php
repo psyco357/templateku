@@ -6,6 +6,10 @@ use App\Http\Controllers\AsetController;
 use App\Helpers\LandingPageHelper;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\KoperasiController;
+use App\Http\Controllers\KeuanganAkunController;
+use App\Http\Controllers\KeuanganBukuBesarController;
+use App\Http\Controllers\KeuanganJurnalController;
+use App\Http\Controllers\KeuanganMappingController;
 use App\Http\Controllers\LaporanController;
 use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\PinjamanController;
@@ -231,6 +235,10 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:founder')
         ->name('shu.distribusi');
 
+    Route::post('/shu/distribusi/bayar', [ShuController::class, 'bayarShu'])
+        ->middleware('role:founder')
+        ->name('shu.bayar');
+
     Route::get('/shu/distribusi/export/excel', [ShuController::class, 'exportDistribusiExcel'])
         ->middleware('role:founder')
         ->name('shu.distribusi.export-excel');
@@ -266,6 +274,46 @@ Route::middleware('auth')->group(function () {
     Route::get('/aset', [AsetController::class, 'index'])
         ->middleware('role:pengurus,founder')
         ->name('aset.index');
+
+    Route::get('/keuangan/akun', [KeuanganAkunController::class, 'index'])
+        ->middleware('role:pengurus,founder')
+        ->name('keuangan.akun.index');
+
+    Route::post('/keuangan/akun', [KeuanganAkunController::class, 'store'])
+        ->middleware('role:pengurus,founder')
+        ->name('keuangan.akun.store');
+
+    Route::patch('/keuangan/akun/{akun}', [KeuanganAkunController::class, 'update'])
+        ->middleware('role:pengurus,founder')
+        ->name('keuangan.akun.update');
+
+    Route::patch('/keuangan/akun/{akun}/nonaktif', [KeuanganAkunController::class, 'deactivate'])
+        ->middleware('role:pengurus,founder')
+        ->name('keuangan.akun.deactivate');
+
+    Route::get('/keuangan/jurnal', [KeuanganJurnalController::class, 'index'])
+        ->middleware('role:pengurus,founder')
+        ->name('keuangan.jurnal.index');
+
+    Route::post('/keuangan/jurnal', [KeuanganJurnalController::class, 'store'])
+        ->middleware('role:pengurus,founder')
+        ->name('keuangan.jurnal.store');
+
+    Route::get('/keuangan/mapping-akun', [KeuanganMappingController::class, 'index'])
+        ->middleware('role:pengurus,founder')
+        ->name('keuangan.mapping.index');
+
+    Route::put('/keuangan/mapping-akun', [KeuanganMappingController::class, 'update'])
+        ->middleware('role:pengurus,founder')
+        ->name('keuangan.mapping.update');
+
+    Route::get('/keuangan/buku-besar', [KeuanganBukuBesarController::class, 'index'])
+        ->middleware('role:pengurus,founder')
+        ->name('keuangan.buku-besar.index');
+
+    Route::get('/keuangan/neraca-saldo', [KeuanganBukuBesarController::class, 'neracaSaldo'])
+        ->middleware('role:pengurus,founder')
+        ->name('keuangan.neraca-saldo.index');
 
     Route::post('/aset', [AsetController::class, 'store'])
         ->middleware('role:pengurus,founder')

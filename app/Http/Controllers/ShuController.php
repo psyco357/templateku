@@ -7,8 +7,11 @@ use App\Models\Angsuran;
 use App\Models\Koperasi;
 use App\Models\ShuSkema;
 use App\Models\ShuSkemaHistory;
+use App\Models\ShuPayment;
 use App\Models\Simpanan;
+use App\Services\JournalPostingService;
 use App\Services\ProfitLossReportService;
+use App\Services\ShuDistributionService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\RedirectResponse;
@@ -17,6 +20,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class ShuController extends Controller
@@ -29,7 +33,11 @@ class ShuController extends Controller
         'dana_sosial' => 5,
     ];
 
-    public function __construct(protected ProfitLossReportService $profitLossReportService) {}
+    public function __construct(
+        protected ProfitLossReportService $profitLossReportService,
+        protected JournalPostingService $journalPostingService,
+        protected ShuDistributionService $shuDistributionService,
+    ) {}
 
     public function perhitungan(Request $request): View
     {
@@ -39,7 +47,7 @@ class ShuController extends Controller
         $year = $this->resolveYear($request);
         $savedScheme = $this->findScheme($koperasi, $year);
         [$percentages, $totalPercentage] = $this->resolvePercentages($request, $savedScheme);
-        $context = $this->buildShuContext($koperasi, $year, $percentages);
+        $context = $this->shuDistributionService->buildContext($koperasi, $year, $percentages);
         $schemeHistory = $this->getSchemeHistory($koperasi, $year);
 
         return view('pages.shu.perhitungan', $context + [
@@ -62,25 +70,33 @@ class ShuController extends Controller
 
         $existingScheme = $this->findScheme($koperasi, $year);
 
-        $scheme = ShuSkema::query()->updateOrCreate(
-            [
-                'koperasi_id' => $koperasi->id,
-                'tahun' => $year,
-            ],
-            $percentages + [
-                'user_id' => $request->user()?->id,
-                'total_persen' => $totalPercentage,
-            ]
-        );
+        $scheme = null;
 
-        ShuSkemaHistory::query()->create($percentages + [
-            'shu_skema_id' => $scheme->id,
-            'koperasi_id' => $koperasi->id,
-            'user_id' => $request->user()?->id,
-            'tahun' => $year,
-            'aksi' => $existingScheme ? 'update' : 'create',
-            'total_persen' => $totalPercentage,
-        ]);
+        \Illuminate\Support\Facades\DB::transaction(function () use ($koperasi, $year, $percentages, $request, $totalPercentage, $existingScheme, &$scheme) {
+            $scheme = ShuSkema::query()->updateOrCreate(
+                [
+                    'koperasi_id' => $koperasi->id,
+                    'tahun' => $year,
+                ],
+                $percentages + [
+                    'user_id' => $request->user()?->id,
+                    'total_persen' => $totalPercentage,
+                ]
+            );
+
+            ShuSkemaHistory::query()->create($percentages + [
+                'shu_skema_id' => $scheme->id,
+                'koperasi_id' => $koperasi->id,
+                'user_id' => $request->user()?->id,
+                'tahun' => $year,
+                'aksi' => $existingScheme ? 'update' : 'create',
+                'total_persen' => $totalPercentage,
+            ]);
+
+            $context = $this->shuDistributionService->buildContext($koperasi, $year, $percentages);
+            $distributionAmount = (float) ($context['distributedTotals']['total_shu'] ?? 0);
+            $this->journalPostingService->syncShuDistribution($scheme, $distributionAmount, $request->user()?->id);
+        });
 
         return redirect()
             ->route('shu.perhitungan', ['tahun' => $year])
@@ -96,10 +112,12 @@ class ShuController extends Controller
         abort_unless($koperasi, 404);
 
         $year = $this->resolveYear($request);
+        $paymentDateMin = $this->resolveShuPaymentStartDate($year);
         $savedScheme = $this->findScheme($koperasi, $year);
         [$percentages, $totalPercentage] = $this->resolvePercentages($request, $savedScheme);
-        $context = $this->buildShuContext($koperasi, $year, $percentages);
+        $context = $this->shuDistributionService->buildContext($koperasi, $year, $percentages);
         $schemeHistory = $this->getSchemeHistory($koperasi, $year);
+        $paymentSummary = $this->buildPaymentSummary($koperasi, $year, $context['memberRows']);
 
         return view('pages.shu.distribusi', $context + [
             'koperasi' => $koperasi,
@@ -108,6 +126,103 @@ class ShuController extends Controller
             'schemeHistory' => $schemeHistory,
             'percentages' => $percentages,
             'totalPercentage' => $totalPercentage,
+            'paymentDateMin' => $paymentDateMin,
+            'paymentSummary' => $paymentSummary,
+        ]);
+    }
+
+    public function bayarShu(Request $request): RedirectResponse
+    {
+        $koperasi = $this->getActiveKoperasi();
+        abort_unless($koperasi, 404);
+
+        $validated = $request->validate([
+            'tahun' => ['required', 'integer', 'min:2020'],
+            'anggota_id' => ['required', 'exists:anggota,id'],
+            'tanggal_bayar' => ['required', 'date'],
+            'jumlah_bayar' => ['required', 'numeric', 'gt:0'],
+            'keterangan' => ['nullable', 'string'],
+        ], [], [
+            'tahun' => 'tahun',
+            'anggota_id' => 'anggota',
+            'tanggal_bayar' => 'tanggal bayar',
+            'jumlah_bayar' => 'jumlah bayar',
+            'keterangan' => 'keterangan',
+        ]);
+
+        $scheme = $this->findScheme($koperasi, (int) $validated['tahun']);
+
+        if (! $scheme) {
+            throw new HttpResponseException(
+                redirect()->back()->withInput()->with([
+                    'status' => 'Simpan skema SHU tahun ini terlebih dahulu sebelum mencatat pembayaran.',
+                    'status_type' => 'warning',
+                ])
+            );
+        }
+
+        $paymentDateMin = $this->resolveShuPaymentStartDate((int) $validated['tahun']);
+
+        if (Carbon::parse($validated['tanggal_bayar'])->lt(Carbon::parse($paymentDateMin))) {
+            throw new HttpResponseException(
+                redirect()->back()->withInput()->with([
+                    'status' => 'Tanggal pembayaran SHU tidak boleh sebelum ' . Carbon::parse($paymentDateMin)->translatedFormat('d M Y') . ' karena kewajiban SHU baru diakui pada akhir tahun buku.',
+                    'status_type' => 'warning',
+                ])
+            );
+        }
+
+        $percentages = [
+            'cadangan' => (float) $scheme->cadangan,
+            'jasa_modal' => (float) $scheme->jasa_modal,
+            'jasa_usaha' => (float) $scheme->jasa_usaha,
+            'dana_pengurus' => (float) $scheme->dana_pengurus,
+            'dana_sosial' => (float) $scheme->dana_sosial,
+        ];
+        $context = $this->shuDistributionService->buildContext($koperasi, (int) $validated['tahun'], $percentages);
+        $paymentSummary = $this->buildPaymentSummary($koperasi, (int) $validated['tahun'], $context['memberRows']);
+        $memberPayment = $paymentSummary['members']->firstWhere('anggota_id', (int) $validated['anggota_id']);
+
+        if (! $memberPayment || (float) $memberPayment['total_shu'] <= 0) {
+            throw new HttpResponseException(
+                redirect()->back()->withInput()->with([
+                    'status' => 'Anggota tersebut tidak memiliki alokasi SHU yang bisa dibayarkan pada tahun ini.',
+                    'status_type' => 'warning',
+                ])
+            );
+        }
+
+        if ((float) $validated['jumlah_bayar'] > (float) $memberPayment['sisa_bayar']) {
+            throw new HttpResponseException(
+                redirect()->back()->withInput()->with([
+                    'status' => 'Jumlah bayar melebihi sisa kewajiban SHU anggota.',
+                    'status_type' => 'warning',
+                ])
+            );
+        }
+
+        DB::transaction(function () use ($koperasi, $validated, $scheme, $request, &$payment) {
+            $payment = ShuPayment::query()->create([
+                'koperasi_id' => $koperasi->id,
+                'shu_skema_id' => $scheme->id,
+                'anggota_id' => $validated['anggota_id'],
+                'periode_buku_id' => $this->resolvePeriodeBukuId($koperasi, $validated['tanggal_bayar']),
+                'no_bukti' => $this->generateShuPaymentNumber($koperasi, $validated['tanggal_bayar']),
+                'tahun' => $validated['tahun'],
+                'tanggal_bayar' => $validated['tanggal_bayar'],
+                'jumlah_bayar' => $validated['jumlah_bayar'],
+                'status' => ShuPayment::STATUS_DIBAYAR,
+                'keterangan' => $validated['keterangan'] ?? null,
+                'created_by' => $request->user()?->id,
+            ]);
+
+            $payment->loadMissing('anggota.profile');
+            $this->journalPostingService->syncShuPayment($payment, $request->user()?->id);
+        });
+
+        return redirect()->route('shu.distribusi', ['tahun' => $validated['tahun']])->with([
+            'status' => 'Pembayaran SHU anggota berhasil dicatat.',
+            'status_type' => 'success',
         ]);
     }
 
@@ -119,7 +234,7 @@ class ShuController extends Controller
         $year = $this->resolveYear($request);
         $savedScheme = $this->findScheme($koperasi, $year);
         [$percentages] = $this->resolvePercentages($request, $savedScheme);
-        $context = $this->buildShuContext($koperasi, $year, $percentages);
+        $context = $this->shuDistributionService->buildContext($koperasi, $year, $percentages);
 
         $html = view('pages.shu.exports.distribusi-excel', $context + [
             'koperasi' => $koperasi,
@@ -143,7 +258,7 @@ class ShuController extends Controller
         $year = $this->resolveYear($request);
         $savedScheme = $this->findScheme($koperasi, $year);
         [$percentages] = $this->resolvePercentages($request, $savedScheme);
-        $context = $this->buildShuContext($koperasi, $year, $percentages);
+        $context = $this->shuDistributionService->buildContext($koperasi, $year, $percentages);
 
         $pdf = Pdf::loadView('pages.shu.exports.distribusi-pdf', $context + [
             'koperasi' => $koperasi,
@@ -153,167 +268,6 @@ class ShuController extends Controller
         ])->setPaper('a4', 'landscape');
 
         return $pdf->download('distribusi-shu-' . $koperasi->id . '-' . $year . '.pdf');
-    }
-
-    protected function buildShuContext(Koperasi $koperasi, int $year, array $percentages): array
-    {
-        [$startDate, $endDate] = $this->resolveYearRange($year);
-        $report = $this->profitLossReportService->build($koperasi->id, $startDate, $endDate);
-        $shuDasar = max((int) round((float) $report['summary']['laba_bersih'], 0), 0);
-        $allocation = $this->allocateExactAmount($shuDasar, $percentages);
-        [$memberRows, $weightSummary, $distributedTotals] = $this->buildMemberDistribution($koperasi, $startDate, $endDate, $allocation);
-
-        return [
-            'summary' => array_merge($report['summary'], [
-                'shu_dasar' => $shuDasar,
-                'shu_status' => $shuDasar > 0 ? 'siap-distribusikan' : 'belum-tersedia',
-                'anggota_penerima' => $memberRows->filter(fn(array $row) => $row['total_shu'] > 0)->count(),
-            ]),
-            'allocation' => $allocation,
-            'memberRows' => $memberRows,
-            'weightSummary' => $weightSummary,
-            'distributedTotals' => $distributedTotals,
-            'yearlyRows' => $report['rows'],
-        ];
-    }
-
-    protected function buildMemberDistribution(Koperasi $koperasi, Carbon $startDate, Carbon $endDate, array $allocation): array
-    {
-        $anggota = AnggotaModel::query()
-            ->with('profile.user')
-            ->whereHas('profile.user', fn($query) => $query->where('koperasi_id', $koperasi->id))
-            ->get();
-
-        $simpananByAnggota = Simpanan::query()
-            ->selectRaw('anggota_id, SUM(jumlah) as total_simpanan')
-            ->where('koperasi_id', $koperasi->id)
-            ->where('status', Simpanan::STATUS_POSTED)
-            ->whereBetween('tanggal_transaksi', [$startDate->toDateString(), $endDate->toDateString()])
-            ->groupBy('anggota_id')
-            ->get()
-            ->keyBy('anggota_id');
-
-        $usahaByAnggota = Angsuran::query()
-            ->join('pinjaman', 'pinjaman.id', '=', 'angsuran.pinjaman_id')
-            ->selectRaw('pinjaman.anggota_id as anggota_id, SUM(angsuran.bunga) as total_jasa_usaha')
-            ->where('angsuran.koperasi_id', $koperasi->id)
-            ->where('angsuran.status', Angsuran::STATUS_DIBAYAR)
-            ->whereBetween('angsuran.tanggal_bayar', [$startDate->toDateString(), $endDate->toDateString()])
-            ->groupBy('pinjaman.anggota_id')
-            ->get()
-            ->keyBy('anggota_id');
-
-        $memberBaseRows = $anggota->map(function (AnggotaModel $anggotaItem) use ($simpananByAnggota, $usahaByAnggota) {
-            return [
-                'anggota_id' => $anggotaItem->id,
-                'no_anggota' => $anggotaItem->no_anggota,
-                'nama' => $anggotaItem->profile?->nama_lengkap ?? '-',
-                'status' => $anggotaItem->status,
-                'total_simpanan' => max((float) ($simpananByAnggota->get($anggotaItem->id)->total_simpanan ?? 0), 0),
-                'total_jasa_usaha' => max((float) ($usahaByAnggota->get($anggotaItem->id)->total_jasa_usaha ?? 0), 0),
-            ];
-        })->values();
-
-        $modalAllocation = $this->allocateExactAmountByWeights(
-            (int) ($allocation['jasa_modal'] ?? 0),
-            $memberBaseRows->pluck('total_simpanan', 'anggota_id')->all()
-        );
-        $usahaAllocation = $this->allocateExactAmountByWeights(
-            (int) ($allocation['jasa_usaha'] ?? 0),
-            $memberBaseRows->pluck('total_jasa_usaha', 'anggota_id')->all()
-        );
-
-        $memberRows = $memberBaseRows->map(function (array $row) use ($modalAllocation, $usahaAllocation) {
-            $modal = (int) ($modalAllocation['amounts'][$row['anggota_id']] ?? 0);
-            $usaha = (int) ($usahaAllocation['amounts'][$row['anggota_id']] ?? 0);
-            $adjustment = (int) ($modalAllocation['extra_units'][$row['anggota_id']] ?? 0) + (int) ($usahaAllocation['extra_units'][$row['anggota_id']] ?? 0);
-
-            return $row + [
-                'bagian_modal' => $modal,
-                'bagian_usaha' => $usaha,
-                'penyesuaian_pembulatan' => $adjustment,
-                'total_shu' => $modal + $usaha,
-            ];
-        })->sortByDesc('total_shu')->values();
-
-        return [
-            $memberRows,
-            [
-                'total_simpanan' => (float) $memberBaseRows->sum('total_simpanan'),
-                'total_jasa_usaha' => (float) $memberBaseRows->sum('total_jasa_usaha'),
-            ],
-            [
-                'bagian_modal' => (int) $memberRows->sum('bagian_modal'),
-                'bagian_usaha' => (int) $memberRows->sum('bagian_usaha'),
-                'total_shu' => (int) $memberRows->sum('total_shu'),
-                'penyesuaian_pembulatan' => (int) $memberRows->sum('penyesuaian_pembulatan'),
-            ],
-        ];
-    }
-
-    protected function allocateExactAmount(int $totalAmount, array $weights): array
-    {
-        $result = $this->allocateExactAmountByWeights($totalAmount, $weights);
-
-        return $result['amounts'];
-    }
-
-    protected function allocateExactAmountByWeights(int $totalAmount, array $weights): array
-    {
-        $normalizedWeights = collect($weights)
-            ->map(fn($weight) => max((float) $weight, 0))
-            ->all();
-        $weightTotal = array_sum($normalizedWeights);
-        $amounts = [];
-        $extraUnits = [];
-        $fractions = [];
-
-        foreach ($normalizedWeights as $key => $weight) {
-            if ($totalAmount <= 0 || $weightTotal <= 0 || $weight <= 0) {
-                $amounts[$key] = 0;
-                $extraUnits[$key] = 0;
-                $fractions[$key] = 0.0;
-                continue;
-            }
-
-            $rawShare = ($totalAmount * $weight) / $weightTotal;
-            $floorShare = (int) floor($rawShare);
-            $amounts[$key] = $floorShare;
-            $extraUnits[$key] = 0;
-            $fractions[$key] = $rawShare - $floorShare;
-        }
-
-        $remaining = $totalAmount - array_sum($amounts);
-
-        if ($remaining > 0) {
-            $orderedKeys = collect(array_keys($normalizedWeights))
-                ->sortByDesc(fn($key) => sprintf('%0.12f-%0.12f-%s', $fractions[$key], $normalizedWeights[$key], (string) $key))
-                ->values()
-                ->all();
-
-            $index = 0;
-            $orderedCount = count($orderedKeys);
-
-            while ($remaining > 0 && $orderedCount > 0) {
-                $key = $orderedKeys[$index % $orderedCount];
-                if (($normalizedWeights[$key] ?? 0) > 0) {
-                    $amounts[$key]++;
-                    $extraUnits[$key]++;
-                    $remaining--;
-                }
-                $index++;
-            }
-        }
-
-        foreach ($normalizedWeights as $key => $_weight) {
-            $amounts[$key] = (int) ($amounts[$key] ?? 0);
-            $extraUnits[$key] = (int) ($extraUnits[$key] ?? 0);
-        }
-
-        return [
-            'amounts' => $amounts,
-            'extra_units' => $extraUnits,
-        ];
     }
 
     protected function findScheme(Koperasi $koperasi, int $year): ?ShuSkema
@@ -337,17 +291,68 @@ class ShuController extends Controller
             ->get();
     }
 
+    protected function buildPaymentSummary(Koperasi $koperasi, int $year, Collection $memberRows): array
+    {
+        $payments = ShuPayment::query()
+            ->with(['anggota.profile', 'creator.profile'])
+            ->where('koperasi_id', $koperasi->id)
+            ->where('tahun', $year)
+            ->orderByDesc('tanggal_bayar')
+            ->orderByDesc('id')
+            ->get();
+
+        $paidByAnggota = $payments->groupBy('anggota_id')->map(fn(Collection $items) => (float) $items->sum('jumlah_bayar'));
+        $members = $memberRows->map(function (array $row) use ($paidByAnggota) {
+            $paid = (float) ($paidByAnggota[$row['anggota_id']] ?? 0);
+            $remaining = max((float) $row['total_shu'] - $paid, 0);
+
+            return $row + [
+                'shu_terbayar' => $paid,
+                'sisa_bayar' => $remaining,
+            ];
+        });
+
+        return [
+            'members' => $members,
+            'payments' => $payments,
+            'total_terbayar' => (float) $payments->sum('jumlah_bayar'),
+            'total_sisa' => (float) $members->sum('sisa_bayar'),
+        ];
+    }
+
+    protected function resolvePeriodeBukuId(Koperasi $koperasi, string $tanggal): ?int
+    {
+        return \App\Models\PeriodeBuku::query()
+            ->where('koperasi_id', $koperasi->id)
+            ->whereDate('tanggal_mulai', '<=', $tanggal)
+            ->whereDate('tanggal_selesai', '>=', $tanggal)
+            ->value('id');
+    }
+
+    protected function generateShuPaymentNumber(Koperasi $koperasi, string $tanggal): string
+    {
+        $datePart = Carbon::parse($tanggal)->format('Ymd');
+        $prefix = sprintf('SHU-%d-%s-', $koperasi->id, $datePart);
+
+        $lastCode = ShuPayment::query()
+            ->where('koperasi_id', $koperasi->id)
+            ->where('no_bukti', 'like', $prefix . '%')
+            ->orderByDesc('no_bukti')
+            ->value('no_bukti');
+
+        $nextSequence = $lastCode ? ((int) \Illuminate\Support\Str::afterLast($lastCode, '-')) + 1 : 1;
+
+        return $prefix . str_pad((string) $nextSequence, 4, '0', STR_PAD_LEFT);
+    }
+
+    protected function resolveShuPaymentStartDate(int $year): string
+    {
+        return Carbon::create($year, 12, 31)->toDateString();
+    }
+
     protected function resolveYear(Request $request): int
     {
         return max(2020, (int) $request->integer('tahun', (int) now()->year));
-    }
-
-    protected function resolveYearRange(int $year): array
-    {
-        $startDate = Carbon::create($year, 1, 1)->startOfDay();
-        $endDate = $startDate->copy()->endOfYear();
-
-        return [$startDate, $endDate];
     }
 
     protected function resolvePercentages(Request $request, ?ShuSkema $savedScheme = null): array

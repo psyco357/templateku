@@ -112,6 +112,18 @@ class MenuHelper
                 'path' => '/aset',
                 'roles' => [User::ROLE_PENGURUS, User::ROLE_FOUNDER],
             ],
+            [
+                'icon' => 'charts',
+                'name' => 'Keuangan',
+                'roles' => [User::ROLE_PENGURUS, User::ROLE_FOUNDER],
+                'subItems' => [
+                    ['name' => 'Daftar Akun', 'path' => '/keuangan/akun', 'pro' => false, 'roles' => [User::ROLE_PENGURUS, User::ROLE_FOUNDER]],
+                    ['name' => 'Jurnal Umum', 'path' => '/keuangan/jurnal', 'pro' => false, 'roles' => [User::ROLE_PENGURUS, User::ROLE_FOUNDER]],
+                    ['name' => 'Mapping Akun', 'path' => '/keuangan/mapping-akun', 'pro' => false, 'roles' => [User::ROLE_PENGURUS, User::ROLE_FOUNDER]],
+                    ['name' => 'Buku Besar', 'path' => '/keuangan/buku-besar', 'pro' => false, 'roles' => [User::ROLE_PENGURUS, User::ROLE_FOUNDER]],
+                    ['name' => 'Neraca Saldo', 'path' => '/keuangan/neraca-saldo', 'pro' => false, 'roles' => [User::ROLE_PENGURUS, User::ROLE_FOUNDER]],
+                ],
+            ],
         ];
     }
 

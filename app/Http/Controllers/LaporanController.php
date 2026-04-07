@@ -8,6 +8,7 @@ use App\Models\AsetKoperasi;
 use App\Models\Koperasi;
 use App\Models\Pinjaman;
 use App\Models\Simpanan;
+use App\Services\AccountingReportService;
 use App\Services\ProfitLossReportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -17,7 +18,10 @@ use Illuminate\View\View;
 
 class LaporanController extends Controller
 {
-    public function __construct(protected ProfitLossReportService $profitLossReportService) {}
+    public function __construct(
+        protected ProfitLossReportService $profitLossReportService,
+        protected AccountingReportService $accountingReportService,
+    ) {}
 
     public function neracaKeuangan(Request $request): View
     {
@@ -28,12 +32,6 @@ class LaporanController extends Controller
             ? Carbon::parse($request->date('tanggal'))->endOfDay()
             : now()->endOfDay();
 
-        $simpananTotal = (float) Simpanan::query()
-            ->where('koperasi_id', $koperasi->id)
-            ->where('status', Simpanan::STATUS_POSTED)
-            ->whereDate('tanggal_transaksi', '<=', $reportDate->toDateString())
-            ->sum('jumlah');
-
         $pinjaman = Pinjaman::query()
             ->with(['anggota.profile', 'angsuran'])
             ->where('koperasi_id', $koperasi->id)
@@ -41,74 +39,16 @@ class LaporanController extends Controller
             ->whereDate('tanggal_pinjaman', '<=', $reportDate->toDateString())
             ->get();
 
-        $angsuranMasuk = (float) Angsuran::query()
-            ->where('koperasi_id', $koperasi->id)
-            ->where('status', Angsuran::STATUS_DIBAYAR)
-            ->whereDate('tanggal_bayar', '<=', $reportDate->toDateString())
-            ->sum('jumlah_bayar');
-
-        $bungaDiterima = (float) Angsuran::query()
-            ->where('koperasi_id', $koperasi->id)
-            ->where('status', Angsuran::STATUS_DIBAYAR)
-            ->whereDate('tanggal_bayar', '<=', $reportDate->toDateString())
-            ->sum('bunga');
-
         $asetKoperasi = $this->getAssetSnapshotQuery($koperasi->id, $reportDate)->get();
-
-        $asetNonaktifSampaiTanggal = AsetKoperasi::query()
-            ->where('koperasi_id', $koperasi->id)
-            ->where('status', AsetKoperasi::STATUS_NONAKTIF)
-            ->whereNotNull('tanggal_nonaktif')
-            ->whereDate('tanggal_nonaktif', '<=', $reportDate->toDateString())
-            ->get();
-
-        $asetDijual = $asetNonaktifSampaiTanggal->filter(function (AsetKoperasi $item) {
-            return $item->tipe_nonaktif === AsetKoperasi::TIPE_NONAKTIF_JUAL
-                || ($item->tipe_nonaktif === null && (float) ($item->nilai_pelepasan ?? 0) > 0);
-        });
-
-        $asetNonaktifTanpaPenjualan = $asetNonaktifSampaiTanggal->filter(function (AsetKoperasi $item) {
-            return $item->tipe_nonaktif === AsetKoperasi::TIPE_NONAKTIF_TANPA_PENJUALAN
-                || ($item->tipe_nonaktif === null && (float) ($item->nilai_pelepasan ?? 0) <= 0);
-        });
-
-        $hasilPelepasanAset = (float) $asetDijual
-            ->sum(fn(AsetKoperasi $item) => (float) ($item->nilai_pelepasan ?? $item->nilai_perolehan ?? 0));
-        $nilaiBukuAsetTerjual = (float) $asetDijual->sum('nilai_perolehan');
-        $penurunanAsetTanpaPenjualan = (float) $asetNonaktifTanpaPenjualan->sum('nilai_perolehan');
-        $labaRugiPelepasanAset = round($hasilPelepasanAset - $nilaiBukuAsetTerjual, 2);
-
-        $asetInvestasi = (float) $asetKoperasi->sum('nilai_perolehan');
-        $asetEmas = (float) $asetKoperasi->where('jenis_aset', AsetKoperasi::JENIS_EMAS)->sum('nilai_perolehan');
-
-        $pinjamanDisalurkan = (float) $pinjaman->sum('jumlah_pinjaman');
         $loanSummaries = $pinjaman->map(fn(Pinjaman $loan) => $this->summarizeLoan($loan, $reportDate));
-        $piutangPinjaman = (float) $loanSummaries->sum('sisa_pokok');
-        $kasTersedia = round($simpananTotal + $angsuranMasuk + $hasilPelepasanAset - $pinjamanDisalurkan - $asetInvestasi, 2);
-        $totalAset = round($kasTersedia + $piutangPinjaman + $asetInvestasi, 2);
-        $totalKewajiban = round($simpananTotal, 2);
-        $ekuitas = round($totalAset - $totalKewajiban, 2);
-        $totalPasiva = round($totalKewajiban + $ekuitas, 2);
+        $report = $this->accountingReportService->buildBalanceSheet($koperasi->id, $reportDate);
+        $summary = $report['summary'];
+        $summary['aset_emas'] = (float) $asetKoperasi->where('jenis_aset', AsetKoperasi::JENIS_EMAS)->sum('nilai_perolehan');
 
         return view('pages.laporan.neraca-keuangan', [
             'koperasi' => $koperasi,
             'reportDate' => $reportDate,
-            'summary' => [
-                'kas_tersedia' => $kasTersedia,
-                'piutang_pinjaman' => $piutangPinjaman,
-                'aset_investasi' => $asetInvestasi,
-                'aset_emas' => $asetEmas,
-                'hasil_pelepasan_aset' => $hasilPelepasanAset,
-                'nilai_buku_aset_terjual' => $nilaiBukuAsetTerjual,
-                'laba_rugi_pelepasan_aset' => $labaRugiPelepasanAset,
-                'penurunan_aset_tanpa_penjualan' => $penurunanAsetTanpaPenjualan,
-                'total_aset' => $totalAset,
-                'total_kewajiban' => $totalKewajiban,
-                'ekuitas' => $ekuitas,
-                'total_pasiva' => $totalPasiva,
-                'simpanan_anggota' => $simpananTotal,
-                'bunga_diterima' => $bungaDiterima,
-            ],
+            'summary' => $summary,
             'assetRows' => $asetKoperasi->sortByDesc('nilai_perolehan')->take(10)->values(),
             'loanSummaries' => $loanSummaries->sortByDesc('sisa_pokok')->take(10)->values(),
         ]);
@@ -130,132 +70,14 @@ class LaporanController extends Controller
             [$startDate, $endDate] = [$endDate->copy()->startOfDay(), $startDate->copy()->endOfDay()];
         }
 
-        $simpananRows = Simpanan::query()
-            ->with(['anggota.profile', 'jenisSimpanan'])
-            ->where('koperasi_id', $koperasi->id)
-            ->where('status', Simpanan::STATUS_POSTED)
-            ->whereBetween('tanggal_transaksi', [$startDate->toDateString(), $endDate->toDateString()])
-            ->get()
-            ->map(function (Simpanan $item) {
-                return [
-                    'tanggal' => $item->tanggal_transaksi,
-                    'kategori' => 'Kas Masuk',
-                    'sumber' => 'Simpanan - ' . ($item->jenisSimpanan?->nama_jenis ?? 'Tanpa jenis'),
-                    'referensi' => $item->no_bukti,
-                    'anggota' => $item->anggota?->profile?->nama_lengkap ?? '-',
-                    'masuk' => (float) $item->jumlah,
-                    'keluar' => 0,
-                ];
-            });
-
-        $angsuranRows = Angsuran::query()
-            ->with(['pinjaman.anggota.profile'])
-            ->where('koperasi_id', $koperasi->id)
-            ->where('status', Angsuran::STATUS_DIBAYAR)
-            ->whereBetween('tanggal_bayar', [$startDate->toDateString(), $endDate->toDateString()])
-            ->get()
-            ->map(function (Angsuran $item) {
-                return [
-                    'tanggal' => $item->tanggal_bayar,
-                    'kategori' => 'Kas Masuk',
-                    'sumber' => 'Pembayaran Angsuran',
-                    'referensi' => $item->pinjaman?->no_pinjaman,
-                    'anggota' => $item->pinjaman?->anggota?->profile?->nama_lengkap ?? '-',
-                    'masuk' => (float) $item->jumlah_bayar,
-                    'keluar' => 0,
-                ];
-            });
-
-        $pinjamanRows = Pinjaman::query()
-            ->with('anggota.profile')
-            ->where('koperasi_id', $koperasi->id)
-            ->where('status', '!=', Pinjaman::STATUS_DITOLAK)
-            ->whereBetween('tanggal_pinjaman', [$startDate->toDateString(), $endDate->toDateString()])
-            ->get()
-            ->map(function (Pinjaman $item) {
-                return [
-                    'tanggal' => $item->tanggal_pinjaman,
-                    'kategori' => 'Kas Keluar',
-                    'sumber' => 'Pencairan Pinjaman',
-                    'referensi' => $item->no_pinjaman,
-                    'anggota' => $item->anggota?->profile?->nama_lengkap ?? '-',
-                    'masuk' => 0,
-                    'keluar' => (float) $item->jumlah_pinjaman,
-                ];
-            });
-
-        $assetRows = AsetKoperasi::query()
-            ->where('koperasi_id', $koperasi->id)
-            ->whereBetween('tanggal_perolehan', [$startDate->toDateString(), $endDate->toDateString()])
-            ->get()
-            ->map(function (AsetKoperasi $item) {
-                return [
-                    'tanggal' => $item->tanggal_perolehan,
-                    'kategori' => 'Kas Keluar',
-                    'sumber' => 'Pembelian Aset - ' . $item->nama_aset,
-                    'referensi' => $item->kode_aset,
-                    'anggota' => strtoupper($item->jenis_aset),
-                    'masuk' => 0,
-                    'keluar' => (float) $item->nilai_perolehan,
-                ];
-            });
-
-        $assetDisposalRows = AsetKoperasi::query()
-            ->where('koperasi_id', $koperasi->id)
-            ->where('status', AsetKoperasi::STATUS_NONAKTIF)
-            ->whereNotNull('tanggal_nonaktif')
-            ->whereBetween('tanggal_nonaktif', [$startDate->toDateString(), $endDate->toDateString()])
-            ->get()
-            ->filter(function (AsetKoperasi $item) {
-                $isSale = $item->tipe_nonaktif === AsetKoperasi::TIPE_NONAKTIF_JUAL
-                    || ($item->tipe_nonaktif === null && (float) ($item->nilai_pelepasan ?? 0) > 0);
-
-                return $isSale && (float) ($item->nilai_pelepasan ?? $item->nilai_perolehan ?? 0) > 0;
-            })
-            ->map(function (AsetKoperasi $item) {
-                $nilaiPelepasan = (float) ($item->nilai_pelepasan ?? $item->nilai_perolehan ?? 0);
-
-                return [
-                    'tanggal' => $item->tanggal_nonaktif,
-                    'kategori' => 'Kas Masuk',
-                    'sumber' => 'Pelepasan Aset - ' . $item->nama_aset,
-                    'referensi' => $item->kode_aset,
-                    'anggota' => strtoupper($item->jenis_aset),
-                    'masuk' => $nilaiPelepasan,
-                    'keluar' => 0,
-                ];
-            });
-
-        $movements = $simpananRows
-            ->concat($angsuranRows)
-            ->concat($pinjamanRows)
-            ->concat($assetRows)
-            ->concat($assetDisposalRows)
-            ->sortBy([
-                ['tanggal', 'asc'],
-                ['kategori', 'desc'],
-            ])
-            ->values();
-
-        $runningBalance = 0;
-        $movements = $movements->map(function (array $row) use (&$runningBalance) {
-            $runningBalance += $row['masuk'] - $row['keluar'];
-            $row['saldo_berjalan'] = $runningBalance;
-
-            return $row;
-        });
+        $report = $this->accountingReportService->buildCashFlow($koperasi->id, $startDate, $endDate);
 
         return view('pages.laporan.arus-kas', [
             'koperasi' => $koperasi,
             'startDate' => $startDate,
             'endDate' => $endDate,
-            'summary' => [
-                'total_masuk' => (float) $movements->sum('masuk'),
-                'total_keluar' => (float) $movements->sum('keluar'),
-                'arus_bersih' => (float) $movements->sum(fn(array $row) => $row['masuk'] - $row['keluar']),
-                'jumlah_transaksi' => $movements->count(),
-            ],
-            'movements' => $movements,
+            'summary' => $report['summary'],
+            'movements' => $report['movements'],
         ]);
     }
 

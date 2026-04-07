@@ -10,6 +10,7 @@ use App\Models\Pinjaman;
 use App\Models\PinjamanStatusLog;
 use App\Models\Simpanan;
 use App\Models\User;
+use App\Services\JournalPostingService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +25,8 @@ use Illuminate\View\View;
 
 class PinjamanController extends Controller
 {
+    public function __construct(protected JournalPostingService $journalPostingService) {}
+
     public function pengajuan(Request $request): View
     {
         $koperasi = $this->getActiveKoperasi();
@@ -125,22 +128,27 @@ class PinjamanController extends Controller
             ]);
         }
 
-        $allowedPinjaman->forceFill([
-            'status' => Pinjaman::STATUS_AKTIF,
-            'alasan_penolakan' => null,
-            'disetujui_oleh' => $reviewer?->id,
-            'disetujui_pada' => now(),
-            'ditolak_oleh' => null,
-            'ditolak_pada' => null,
-        ])->save();
+        DB::transaction(function () use ($allowedPinjaman, $reviewer) {
+            $allowedPinjaman->forceFill([
+                'status' => Pinjaman::STATUS_AKTIF,
+                'alasan_penolakan' => null,
+                'disetujui_oleh' => $reviewer?->id,
+                'disetujui_pada' => now(),
+                'ditolak_oleh' => null,
+                'ditolak_pada' => null,
+            ])->save();
 
-        $this->logStatusChange(
-            $allowedPinjaman,
-            Pinjaman::STATUS_DIAJUKAN,
-            Pinjaman::STATUS_AKTIF,
-            $reviewer,
-            'Pengajuan pinjaman disetujui.'
-        );
+            $this->logStatusChange(
+                $allowedPinjaman,
+                Pinjaman::STATUS_DIAJUKAN,
+                Pinjaman::STATUS_AKTIF,
+                $reviewer,
+                'Pengajuan pinjaman disetujui.'
+            );
+
+            $allowedPinjaman->loadMissing('anggota.profile');
+            $this->journalPostingService->syncPinjamanPencairan($allowedPinjaman, $reviewer?->id);
+        });
 
         return redirect()->route('pinjaman.pengajuan')->with([
             'status' => 'Pengajuan pinjaman berhasil disetujui dan sekarang berstatus aktif.',
@@ -368,7 +376,7 @@ class PinjamanController extends Controller
         }
 
         DB::transaction(function () use ($koperasi, $allowedPinjaman, $validated, $nextInstallment, $request) {
-            Angsuran::query()->updateOrCreate(
+            $angsuran = Angsuran::query()->updateOrCreate(
                 [
                     'pinjaman_id' => $allowedPinjaman->id,
                     'angsuran_ke' => $nextInstallment['angsuran_ke'],
@@ -401,6 +409,9 @@ class PinjamanController extends Controller
                     'Pinjaman dinyatakan lunas setelah pembayaran angsuran ke-' . $nextInstallment['angsuran_ke'] . '.'
                 );
             }
+
+            $allowedPinjaman->loadMissing('anggota.profile');
+            $this->journalPostingService->syncAngsuran($allowedPinjaman, $angsuran, $request->user()?->id);
         });
 
         $paymentDate = Carbon::parse($validated['tanggal_bayar']);

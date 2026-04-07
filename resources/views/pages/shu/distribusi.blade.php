@@ -45,6 +45,14 @@
             <p class="text-sm text-slate-500">Anggota Penerima</p>
             <p class="mt-3 text-2xl font-semibold text-slate-900">{{ $summary['anggota_penerima'] }}</p>
         </div>
+        <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p class="text-sm text-slate-500">SHU Sudah Dibayar</p>
+            <p class="mt-3 text-2xl font-semibold text-emerald-700">Rp {{ number_format($paymentSummary['total_terbayar'], 0, ',', '.') }}</p>
+        </div>
+        <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p class="text-sm text-slate-500">Sisa Kewajiban SHU</p>
+            <p class="mt-3 text-2xl font-semibold text-amber-700">Rp {{ number_format($paymentSummary['total_sisa'], 0, ',', '.') }}</p>
+        </div>
     </div>
 
     <div class="grid gap-6 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
@@ -82,10 +90,13 @@
                             <th class="py-3 pr-4 font-medium text-right">Bagian Usaha</th>
                             <th class="py-3 pr-4 font-medium text-right">Penyesuaian</th>
                             <th class="py-3 pr-4 font-medium text-right">Total SHU</th>
+                            <th class="py-3 pr-4 font-medium text-right">Terbayar</th>
+                            <th class="py-3 pr-4 font-medium text-right">Sisa</th>
+                            <th class="py-3 pr-4 font-medium">Pembayaran</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
-                        @forelse ($memberRows as $item)
+                        @forelse ($paymentSummary['members'] as $item)
                         <tr>
                             <td class="py-3 pr-4">
                                 <p class="font-medium text-slate-900">{{ $item['nama'] }}</p>
@@ -98,10 +109,27 @@
                             <td class="py-3 pr-4 text-right font-medium text-slate-900">Rp {{ number_format($item['bagian_usaha'], 0, ',', '.') }}</td>
                             <td class="py-3 pr-4 text-right text-slate-600">{{ $item['penyesuaian_pembulatan'] > 0 ? '+' . number_format($item['penyesuaian_pembulatan'], 0, ',', '.') : '-' }}</td>
                             <td class="py-3 pr-4 text-right font-semibold {{ $item['total_shu'] > 0 ? 'text-emerald-700' : 'text-slate-500' }}">Rp {{ number_format($item['total_shu'], 0, ',', '.') }}</td>
+                            <td class="py-3 pr-4 text-right font-medium text-slate-900">Rp {{ number_format($item['shu_terbayar'], 0, ',', '.') }}</td>
+                            <td class="py-3 pr-4 text-right font-medium {{ $item['sisa_bayar'] > 0 ? 'text-amber-700' : 'text-emerald-700' }}">Rp {{ number_format($item['sisa_bayar'], 0, ',', '.') }}</td>
+                            <td class="py-3 pr-4">
+                                @if ($item['sisa_bayar'] > 0)
+                                <form action="{{ route('shu.bayar') }}" method="POST" class="flex min-w-[240px] flex-col gap-2">
+                                    @csrf
+                                    <input type="hidden" name="tahun" value="{{ $year }}">
+                                    <input type="hidden" name="anggota_id" value="{{ $item['anggota_id'] }}">
+                                    <input type="date" name="tanggal_bayar" min="{{ $paymentDateMin }}" value="{{ old('tanggal_bayar', $paymentDateMin) }}" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200">
+                                    <input type="number" step="0.01" min="0.01" max="{{ $item['sisa_bayar'] }}" name="jumlah_bayar" value="{{ number_format($item['sisa_bayar'], 2, '.', '') }}" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200">
+                                    <p class="text-xs text-slate-500">Pembayaran SHU mulai bisa dicatat per {{ \Illuminate\Support\Carbon::parse($paymentDateMin)->translatedFormat('d M Y') }}.</p>
+                                    <button type="submit" class="inline-flex items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800">Bayar SHU</button>
+                                </form>
+                                @else
+                                <span class="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Lunas</span>
+                                @endif
+                            </td>
                         </tr>
                         @empty
                         <tr>
-                            <td colspan="8" class="py-6 text-center text-slate-500">Belum ada data anggota untuk distribusi SHU.</td>
+                            <td colspan="11" class="py-6 text-center text-slate-500">Belum ada data anggota untuk distribusi SHU.</td>
                         </tr>
                         @endforelse
                     </tbody>
@@ -112,11 +140,46 @@
                             <td class="py-3 pr-4 text-right font-semibold text-slate-900">Rp {{ number_format($distributedTotals['bagian_usaha'], 0, ',', '.') }}</td>
                             <td class="py-3 pr-4 text-right font-semibold text-slate-900">{{ $distributedTotals['penyesuaian_pembulatan'] > 0 ? '+' . number_format($distributedTotals['penyesuaian_pembulatan'], 0, ',', '.') : '-' }}</td>
                             <td class="py-3 pr-4 text-right font-semibold text-emerald-700">Rp {{ number_format($distributedTotals['total_shu'], 0, ',', '.') }}</td>
+                            <td class="py-3 pr-4 text-right font-semibold text-slate-900">Rp {{ number_format($paymentSummary['total_terbayar'], 0, ',', '.') }}</td>
+                            <td class="py-3 pr-4 text-right font-semibold text-amber-700">Rp {{ number_format($paymentSummary['total_sisa'], 0, ',', '.') }}</td>
+                            <td class="py-3 pr-4"></td>
                         </tr>
                     </tfoot>
                 </table>
             </div>
             <p class="mt-3 text-xs text-slate-500">Total distribusi jasa modal dan jasa usaha pada tabel ini selalu sama persis dengan pool SHU yang disimulasikan.</p>
+        </div>
+    </div>
+
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 class="text-lg font-semibold text-slate-900">Histori Pembayaran SHU</h2>
+        <div class="mt-5 overflow-x-auto">
+            <table class="min-w-full divide-y divide-slate-200 text-sm">
+                <thead>
+                    <tr class="text-left text-slate-500">
+                        <th class="py-3 pr-4 font-medium">Tanggal</th>
+                        <th class="py-3 pr-4 font-medium">No. Bukti</th>
+                        <th class="py-3 pr-4 font-medium">Anggota</th>
+                        <th class="py-3 pr-4 font-medium text-right">Jumlah</th>
+                        <th class="py-3 pr-4 font-medium">Dicatat Oleh</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    @forelse ($paymentSummary['payments'] as $payment)
+                    <tr>
+                        <td class="py-3 pr-4 text-slate-600">{{ $payment->tanggal_bayar?->translatedFormat('d M Y') }}</td>
+                        <td class="py-3 pr-4 font-medium text-slate-900">{{ $payment->no_bukti }}</td>
+                        <td class="py-3 pr-4 text-slate-600">{{ $payment->anggota?->profile?->nama_lengkap ?? '-' }}</td>
+                        <td class="py-3 pr-4 text-right font-medium text-slate-900">Rp {{ number_format((float) $payment->jumlah_bayar, 0, ',', '.') }}</td>
+                        <td class="py-3 pr-4 text-slate-600">{{ $payment->creator?->profile?->nama_lengkap ?? $payment->creator?->username ?? '-' }}</td>
+                    </tr>
+                    @empty
+                    <tr>
+                        <td colspan="5" class="py-6 text-center text-slate-500">Belum ada pembayaran SHU yang dicatat.</td>
+                    </tr>
+                    @endforelse
+                </tbody>
+            </table>
         </div>
     </div>
 

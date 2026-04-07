@@ -49,4 +49,9 @@ class ShuSkema extends Model
     {
         return $this->hasMany(ShuSkemaHistory::class, 'shu_skema_id')->latest('created_at')->latest('id');
     }
+
+    public function payments(): HasMany
+    {
+        return $this->hasMany(ShuPayment::class, 'shu_skema_id')->latest('tanggal_bayar')->latest('id');
+    }
 }

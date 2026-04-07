@@ -5,8 +5,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+    <link rel="alternate icon" href="{{ asset('favicon.ico') }}">
 
-    <title>@hasSection('title')@yield('title')@else{{ $title ?? 'Dashboard' }}@endif | TailAdmin - Laravel Tailwind CSS Admin Dashboard Template</title>
+    <title>@hasSection('title')@yield('title')@else{{ $title ?? 'Dashboard' }}@endif | {{ config('app.name', 'Sistem Koperasi') }}</title>
 
     <!-- Scripts -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -79,16 +81,24 @@
     <!-- Apply dark mode immediately to prevent flash -->
     <script>
         (function() {
+            const applyThemeClasses = (theme) => {
+                const isDark = theme === 'dark';
+                document.documentElement.classList.toggle('dark', isDark);
+
+                if (document.body) {
+                    document.body.classList.toggle('dark', isDark);
+                    document.body.classList.toggle('bg-gray-900', isDark);
+                }
+            };
+
             const savedTheme = localStorage.getItem('theme');
             const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
             const theme = savedTheme || systemTheme;
-            if (theme === 'dark') {
-                document.documentElement.classList.add('dark');
-                document.body.classList.add('dark', 'bg-gray-900');
-            } else {
-                document.documentElement.classList.remove('dark');
-                document.body.classList.remove('dark', 'bg-gray-900');
-            }
+
+            applyThemeClasses(theme);
+            document.addEventListener('DOMContentLoaded', () => applyThemeClasses(theme), {
+                once: true
+            });
         })();
     </script>
 
