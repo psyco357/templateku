@@ -7,6 +7,7 @@ use App\Models\AnggotaModel;
 use App\Models\Koperasi;
 use App\Models\PeriodeBuku;
 use App\Models\Pinjaman;
+use App\Models\PinjamanStatusLog;
 use App\Models\Simpanan;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -53,6 +54,7 @@ class PinjamanController extends Controller
             'pinjaman' => $pinjaman,
             'selectedAnggotaId' => $selectedAnggotaId,
             'isAnggotaView' => $isAnggotaView,
+            'canReviewPinjaman' => $user?->hasRole([User::ROLE_PENGURUS, User::ROLE_FOUNDER]) ?? false,
             'monthlyInterest' => Pinjaman::DEFAULT_MONTHLY_INTEREST,
             'paymentDay' => Pinjaman::DEFAULT_PAYMENT_DAY,
             'maxSavingsRatio' => Pinjaman::MAX_SAVINGS_RATIO,
@@ -81,7 +83,7 @@ class PinjamanController extends Controller
             $validated['tanggal_pinjaman']
         );
 
-        Pinjaman::query()->create([
+        $pinjaman = Pinjaman::query()->create([
             'koperasi_id' => $koperasi->id,
             'anggota_id' => $anggota->id,
             'periode_buku_id' => $this->resolvePeriodeBukuId($koperasi, $validated['tanggal_pinjaman']),
@@ -94,13 +96,99 @@ class PinjamanController extends Controller
             'tanggal_pengajuan' => now()->toDateString(),
             'tanggal_pinjaman' => $validated['tanggal_pinjaman'],
             'tanggal_jatuh_tempo' => $terms['final_due_date']->toDateString(),
-            'status' => Pinjaman::STATUS_AKTIF,
+            'status' => Pinjaman::STATUS_DIAJUKAN,
             'keterangan' => $validated['keterangan'] ?? null,
         ]);
 
+        $this->logStatusChange(
+            $pinjaman,
+            null,
+            Pinjaman::STATUS_DIAJUKAN,
+            $request->user(),
+            'Pengajuan pinjaman dibuat.'
+        );
+
         return redirect()->route('pinjaman.pengajuan')->with([
-            'status' => 'Pinjaman berhasil disimpan. Angsuran pertama jatuh tempo pada ' . $terms['first_due_date']->translatedFormat('d M Y') . '.',
+            'status' => 'Pengajuan pinjaman berhasil disimpan dan menunggu verifikasi. Jika disetujui, angsuran pertama akan jatuh tempo pada ' . $terms['first_due_date']->translatedFormat('d M Y') . '.',
             'status_type' => 'success',
+        ]);
+    }
+
+    public function approve(Request $request, Pinjaman $pinjaman): RedirectResponse
+    {
+        $allowedPinjaman = $this->resolveReviewablePinjaman($request, $pinjaman);
+        $reviewer = $request->user();
+
+        if ($allowedPinjaman->status !== Pinjaman::STATUS_DIAJUKAN) {
+            throw ValidationException::withMessages([
+                'pinjaman' => 'Hanya pengajuan dengan status diajukan yang dapat disetujui.',
+            ]);
+        }
+
+        $allowedPinjaman->forceFill([
+            'status' => Pinjaman::STATUS_AKTIF,
+            'alasan_penolakan' => null,
+            'disetujui_oleh' => $reviewer?->id,
+            'disetujui_pada' => now(),
+            'ditolak_oleh' => null,
+            'ditolak_pada' => null,
+        ])->save();
+
+        $this->logStatusChange(
+            $allowedPinjaman,
+            Pinjaman::STATUS_DIAJUKAN,
+            Pinjaman::STATUS_AKTIF,
+            $reviewer,
+            'Pengajuan pinjaman disetujui.'
+        );
+
+        return redirect()->route('pinjaman.pengajuan')->with([
+            'status' => 'Pengajuan pinjaman berhasil disetujui dan sekarang berstatus aktif.',
+            'status_type' => 'success',
+        ]);
+    }
+
+    public function reject(Request $request, Pinjaman $pinjaman): RedirectResponse
+    {
+        $allowedPinjaman = $this->resolveReviewablePinjaman($request, $pinjaman);
+        $reviewer = $request->user();
+
+        if ($allowedPinjaman->status !== Pinjaman::STATUS_DIAJUKAN) {
+            throw ValidationException::withMessages([
+                'pinjaman' => 'Hanya pengajuan dengan status diajukan yang dapat ditolak.',
+            ]);
+        }
+
+        $validated = $request->validate([
+            'alasan_penolakan' => ['required', 'string', 'max:1000'],
+        ], [
+            'required' => ':attribute wajib diisi.',
+            'string' => ':attribute harus berupa teks.',
+            'max.string' => ':attribute tidak boleh lebih dari :max karakter.',
+        ], [
+            'alasan_penolakan' => 'alasan penolakan',
+        ]);
+
+        $allowedPinjaman->forceFill([
+            'status' => Pinjaman::STATUS_DITOLAK,
+            'alasan_penolakan' => $validated['alasan_penolakan'],
+            'ditolak_oleh' => $reviewer?->id,
+            'ditolak_pada' => now(),
+            'disetujui_oleh' => null,
+            'disetujui_pada' => null,
+        ])->save();
+
+        $this->logStatusChange(
+            $allowedPinjaman,
+            Pinjaman::STATUS_DIAJUKAN,
+            Pinjaman::STATUS_DITOLAK,
+            $reviewer,
+            'Pengajuan pinjaman ditolak. Alasan: ' . $validated['alasan_penolakan']
+        );
+
+        return redirect()->route('pinjaman.pengajuan')->with([
+            'status' => 'Pengajuan pinjaman ditolak.',
+            'status_type' => 'warning',
         ]);
     }
 
@@ -279,7 +367,7 @@ class PinjamanController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($koperasi, $allowedPinjaman, $validated, $nextInstallment) {
+        DB::transaction(function () use ($koperasi, $allowedPinjaman, $validated, $nextInstallment, $request) {
             Angsuran::query()->updateOrCreate(
                 [
                     'pinjaman_id' => $allowedPinjaman->id,
@@ -298,10 +386,21 @@ class PinjamanController extends Controller
             );
 
             $hasRemainingInstallment = $allowedPinjaman->tenor_bulan > $nextInstallment['angsuran_ke'];
+            $newStatus = $hasRemainingInstallment ? Pinjaman::STATUS_AKTIF : Pinjaman::STATUS_LUNAS;
 
             $allowedPinjaman->forceFill([
-                'status' => $hasRemainingInstallment ? Pinjaman::STATUS_AKTIF : Pinjaman::STATUS_LUNAS,
+                'status' => $newStatus,
             ])->save();
+
+            if ($newStatus !== Pinjaman::STATUS_AKTIF) {
+                $this->logStatusChange(
+                    $allowedPinjaman,
+                    Pinjaman::STATUS_AKTIF,
+                    $newStatus,
+                    $request->user(),
+                    'Pinjaman dinyatakan lunas setelah pembayaran angsuran ke-' . $nextInstallment['angsuran_ke'] . '.'
+                );
+            }
         });
 
         $paymentDate = Carbon::parse($validated['tanggal_bayar']);
@@ -369,7 +468,7 @@ class PinjamanController extends Controller
     protected function getAccessiblePinjamanQuery(Koperasi $koperasi, ?User $user): Builder
     {
         return Pinjaman::query()
-            ->with(['anggota.profile.user', 'periodeBuku', 'angsuran'])
+            ->with(['anggota.profile.user', 'periodeBuku', 'angsuran', 'approver.profile', 'rejector.profile'])
             ->where('koperasi_id', $koperasi->id)
             ->when($user?->hasRole(User::ROLE_ANGGOTA), function (Builder $query) use ($user) {
                 $query->whereHas('anggota.profile.user', function (Builder $memberQuery) use ($user) {
@@ -406,6 +505,32 @@ class PinjamanController extends Controller
             'tenor_bulan' => 'tenor',
             'tanggal_pinjaman' => 'tanggal pinjaman',
             'keterangan' => 'keterangan',
+        ]);
+    }
+
+    protected function resolveReviewablePinjaman(Request $request, Pinjaman $pinjaman): Pinjaman
+    {
+        $koperasi = $this->getActiveKoperasi();
+        abort_unless($koperasi, 404);
+
+        $allowedPinjaman = $this->getAccessiblePinjamanQuery($koperasi, $request->user())
+            ->whereKey($pinjaman->id)
+            ->first();
+
+        abort_unless($allowedPinjaman, 404);
+
+        return $allowedPinjaman;
+    }
+
+    protected function logStatusChange(Pinjaman $pinjaman, ?string $previousStatus, string $newStatus, ?User $actor, ?string $note = null): void
+    {
+        PinjamanStatusLog::query()->create([
+            'pinjaman_id' => $pinjaman->id,
+            'koperasi_id' => $pinjaman->koperasi_id,
+            'status_sebelumnya' => $previousStatus,
+            'status_baru' => $newStatus,
+            'diproses_oleh' => $actor?->id,
+            'catatan' => $note,
         ]);
     }
 

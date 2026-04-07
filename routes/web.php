@@ -195,6 +195,14 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:anggota,pengurus,founder')
         ->name('pinjaman.store');
 
+    Route::patch('/pinjaman/{pinjaman}/approve', [PinjamanController::class, 'approve'])
+        ->middleware('role:pengurus,founder')
+        ->name('pinjaman.approve');
+
+    Route::patch('/pinjaman/{pinjaman}/reject', [PinjamanController::class, 'reject'])
+        ->middleware('role:pengurus,founder')
+        ->name('pinjaman.reject');
+
     Route::get('/pinjaman/simulasi', [PinjamanController::class, 'simulasi'])
         ->middleware('role:anggota,pengurus,founder')
         ->name('pinjaman.simulasi');

@@ -34,6 +34,11 @@ class Pinjaman extends Model
         'tanggal_jatuh_tempo',
         'status',
         'keterangan',
+        'alasan_penolakan',
+        'disetujui_oleh',
+        'disetujui_pada',
+        'ditolak_oleh',
+        'ditolak_pada',
     ];
 
     protected function casts(): array
@@ -45,6 +50,8 @@ class Pinjaman extends Model
             'tanggal_pengajuan' => 'date',
             'tanggal_pinjaman' => 'date',
             'tanggal_jatuh_tempo' => 'date',
+            'disetujui_pada' => 'datetime',
+            'ditolak_pada' => 'datetime',
             'tanggal_tagihan_bulanan' => 'integer',
             'tenor_bulan' => 'integer',
         ];
@@ -68,6 +75,21 @@ class Pinjaman extends Model
     public function angsuran(): HasMany
     {
         return $this->hasMany(Angsuran::class);
+    }
+
+    public function statusLogs(): HasMany
+    {
+        return $this->hasMany(PinjamanStatusLog::class)->latest();
+    }
+
+    public function approver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'disetujui_oleh');
+    }
+
+    public function rejector(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'ditolak_oleh');
     }
 
     public static function statuses(): array
