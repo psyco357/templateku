@@ -1,59 +1,187 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Sistem Informasi Koperasi
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Sistem ini adalah aplikasi manajemen koperasi berbasis Laravel untuk mengelola data anggota, simpanan, pinjaman, SHU, aset, laporan keuangan, dan administrasi koperasi dalam satu dashboard.
 
-## About Laravel
+## Ringkasan Fitur
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- Autentikasi pengguna dengan login, registrasi, logout, dan reset password.
+- Manajemen anggota koperasi, profil anggota, dan pengaturan peran pengguna.
+- Pengelolaan data koperasi dan periode buku.
+- Modul simpanan dengan master jenis simpanan, transaksi, mutasi, rekap saldo, cetak bukti, dan ekspor data.
+- Modul pinjaman dengan pengajuan, simulasi, jadwal angsuran, status pembayaran, dan pembayaran angsuran.
+- Modul SHU untuk perhitungan skema distribusi serta ekspor hasil ke Excel dan PDF.
+- Laporan koperasi seperti neraca keuangan, arus kas, rugi laba, rugi laba tahunan, tunggakan pinjaman, dan laporan RAT.
+- Pengelolaan aset koperasi.
+- Manajemen akun pengguna oleh founder.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Peran Pengguna
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Sistem saat ini membedakan hak akses utama menjadi:
 
-## Learning Laravel
+- `founder`: akses penuh, termasuk pengaturan koperasi, akun, dan distribusi SHU.
+- `pengurus`: akses operasional untuk anggota, simpanan, pinjaman, aset, dan laporan.
+- `anggota`: akses ke fitur personal seperti simpanan, pengajuan pinjaman, simulasi, jadwal angsuran, dan status pembayaran.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+## Modul yang Tersedia
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+### 1. Dashboard
 
-## Laravel Sponsors
+Dashboard sebagai pusat ringkasan operasional koperasi setelah pengguna login.
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+### 2. Keanggotaan
 
-### Premium Partners
+- Daftar anggota
+- Tambah anggota baru
+- Detail dan pembaruan data anggota
+- Generate nomor anggota
+- Pengaturan role anggota
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+### 3. Simpanan
 
-## Contributing
+- Master jenis simpanan
+- Input transaksi simpanan
+- Detail transaksi dan pembatalan transaksi
+- Cetak bukti transaksi
+- Rekap saldo simpanan
+- Mutasi simpanan per anggota
+- Export rekap dan mutasi
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### 4. Pinjaman
 
-## Code of Conduct
+- Pengajuan pinjaman
+- Simulasi pinjaman
+- Jadwal angsuran
+- Status pembayaran pinjaman
+- Pembayaran angsuran
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Aturan bisnis yang sudah tercermin di aplikasi:
 
-## Security Vulnerabilities
+- Maksimal pinjaman adalah 90% dari saldo simpanan yang sudah diposting.
+- Bunga pinjaman menggunakan nominal tetap Rp20.000 per bulan.
+- Tagihan bulanan jatuh pada tanggal 5.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### 5. SHU
 
-## License
+- Perhitungan skema SHU
+- Penyimpanan skema distribusi
+- Distribusi SHU
+- Export distribusi ke Excel dan PDF
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### 6. Laporan
+
+- Neraca keuangan
+- Arus kas
+- Rugi laba
+- Rugi laba tahunan
+- Tunggakan pinjaman
+- Laporan RAT
+
+### 7. Aset Koperasi
+
+- Daftar aset
+- Tambah aset
+- Ubah aset
+- Nonaktifkan aset
+
+### 8. Pengaturan dan Akun
+
+- Edit profil pengguna
+- Ubah password
+- Pengaturan tampilan aplikasi
+- Manajemen akun pengguna
+- Reset password akun oleh founder
+- Aktivasi atau nonaktifkan akun
+
+## Modul Dalam Pengembangan
+
+Beberapa halaman sudah disiapkan sebagai placeholder dan belum selesai diimplementasikan:
+
+- Kartu anggota
+- Riwayat transaksi anggota
+- Kasir / POS toko koperasi
+- Manajemen stok produk
+- Laporan penjualan toko
+
+## Teknologi yang Digunakan
+
+- PHP 8.2+
+- Laravel 12
+- MySQL atau database relasional yang kompatibel dengan Laravel
+- Vite
+- Tailwind CSS 4
+- Alpine.js
+- Pest untuk testing
+- DomPDF untuk export PDF
+
+## Instalasi
+
+1. Clone repository ini.
+2. Salin file environment jika belum ada.
+3. Install dependency PHP dan JavaScript.
+4. Generate application key.
+5. Jalankan migration.
+
+Contoh langkah cepat:
+
+```bash
+composer install
+copy .env.example .env
+php artisan key:generate
+php artisan migrate
+npm install
+```
+
+Atau gunakan script bawaan proyek:
+
+```bash
+composer run setup
+```
+
+## Menjalankan Aplikasi
+
+Untuk mode development, jalankan:
+
+```bash
+composer run dev
+```
+
+Perintah ini akan menjalankan:
+
+- server Laravel
+- queue listener
+- Vite dev server
+
+Jika ingin menjalankan manual secara terpisah:
+
+```bash
+php artisan serve
+npm run dev
+```
+
+Untuk build asset production:
+
+```bash
+npm run build
+```
+
+## Pengujian
+
+Menjalankan test:
+
+```bash
+composer run test
+```
+
+## Struktur Singkat Aplikasi
+
+- `app/Http/Controllers`: controller utama seperti autentikasi, anggota, simpanan, pinjaman, laporan, SHU, aset, dan pengaturan.
+- `app/Models`: model domain koperasi.
+- `database/migrations`: skema database aplikasi.
+- `resources/views`: tampilan antarmuka aplikasi.
+- `routes/web.php`: definisi route web dan hak akses per modul.
+
+## Catatan
+
+- Registrasi pengguna saat ini membuat data profil sekaligus dan langsung login ke dashboard.
+- Aplikasi menggunakan middleware role untuk membatasi akses berdasarkan jenis pengguna.
+- Landing page publik mengambil data profil koperasi dari database.
