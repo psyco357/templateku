@@ -1,3 +1,21 @@
+@php
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+$currentPhoto = $user->profile?->foto_profil;
+$currentPhotoUrl = asset('images/user/owner.png');
+
+if (filled($currentPhoto)) {
+if (Str::startsWith($currentPhoto, ['http://', 'https://'])) {
+$currentPhotoUrl = $currentPhoto;
+} elseif (Str::startsWith($currentPhoto, ['/storage/', 'storage/', '/images/', 'images/'])) {
+$currentPhotoUrl = asset(ltrim($currentPhoto, '/'));
+} else {
+$currentPhotoUrl = Storage::disk('public')->url($currentPhoto);
+}
+}
+@endphp
+
 @extends('layouts.app')
 
 @section('title', 'Profile')
@@ -33,9 +51,24 @@
             <h4 class="text-lg font-semibold text-gray-800 dark:text-white/90">Form Profile</h4>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Perubahan di sini akan langsung memperbarui akun login dan tabel profile Anda.</p>
 
-            <form method="POST" action="{{ route('settings.profile.update') }}" class="mt-6 grid gap-5 md:grid-cols-2">
+            <form method="POST" action="{{ route('settings.profile.update') }}" enctype="multipart/form-data" class="mt-6 grid gap-5 md:grid-cols-2">
                 @csrf
                 @method('PATCH')
+
+                <div class="md:col-span-2">
+                    <label for="foto_profil" class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Foto Profil</label>
+                    <div class="flex flex-col gap-4 rounded-xl border border-dashed border-gray-300 p-4 dark:border-gray-700 md:flex-row md:items-center">
+                        <div class="h-20 w-20 overflow-hidden rounded-full border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
+                            <img src="{{ $currentPhotoUrl }}" alt="{{ $user->profile?->nama_lengkap ?? $user->username }}" class="h-full w-full object-cover">
+                        </div>
+                        <div class="flex-1">
+                            <input type="file" id="foto_profil" name="foto_profil" accept="image/png,image/jpeg,image/jpg,image/webp"
+                                class="block w-full text-sm text-gray-600 file:mr-4 file:rounded-lg file:border-0 file:bg-orange-500 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-orange-600 dark:text-gray-300">
+                            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Format: JPG, PNG, atau WEBP. Maksimal 2 MB. Foto baru akan langsung dipakai di dropdown setelah profil disimpan.</p>
+                        </div>
+                    </div>
+                    @error('foto_profil')<p class="mt-1 text-sm text-red-500">{{ $message }}</p>@enderror
+                </div>
 
                 <div class="md:col-span-2">
                     <label for="nama_lengkap" class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Nama Lengkap</label>

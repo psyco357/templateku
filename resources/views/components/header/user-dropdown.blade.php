@@ -1,3 +1,26 @@
+@php
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+$currentUser = auth()->user();
+$currentProfile = $currentUser?->profile;
+
+$displayName = $currentProfile?->nama_lengkap ?: $currentUser?->username ?: 'User';
+$displayEmail = $currentUser?->email ?: '-';
+$avatarPath = $currentProfile?->foto_profil;
+$avatarUrl = asset('images/user/owner.png');
+
+if (filled($avatarPath)) {
+if (Str::startsWith($avatarPath, ['http://', 'https://'])) {
+$avatarUrl = $avatarPath;
+} elseif (Str::startsWith($avatarPath, ['/storage/', 'storage/', '/images/', 'images/'])) {
+$avatarUrl = asset(ltrim($avatarPath, '/'));
+} else {
+$avatarUrl = Storage::disk('public')->url($avatarPath);
+}
+}
+@endphp
+
 <div class="relative" x-data="{
     dropdownOpen: false,
     toggleDropdown() {
@@ -13,10 +36,10 @@
         @click.prevent="toggleDropdown()"
         type="button">
         <span class="mr-3 overflow-hidden rounded-full h-11 w-11">
-            <img src="/images/user/owner.png" alt="User" />
+            <img src="{{ $avatarUrl }}" alt="{{ $displayName }}" class="h-full w-full object-cover" />
         </span>
 
-        <span class="block mr-1 font-medium text-theme-sm">Musharof</span>
+        <span class="block mr-1 font-medium text-theme-sm">{{ $displayName }}</span>
 
         <!-- Chevron Icon -->
         <svg
@@ -42,8 +65,8 @@
         style="display: none;">
         <!-- User Info -->
         <div>
-            <span class="block font-medium text-gray-700 text-theme-sm dark:text-gray-400">Musharof Chowdhury</span>
-            <span class="mt-0.5 block text-theme-xs text-gray-500 dark:text-gray-400">randomuser@pimjo.com</span>
+            <span class="block font-medium text-gray-700 text-theme-sm dark:text-gray-400">{{ $displayName }}</span>
+            <span class="mt-0.5 block text-theme-xs text-gray-500 dark:text-gray-400">{{ $displayEmail }}</span>
         </div>
 
         <!-- Menu Items -->

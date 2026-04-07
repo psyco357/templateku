@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
@@ -40,11 +41,14 @@ class SettingsController extends Controller
             'tanggal_lahir' => ['nullable', 'date'],
             'alamat' => ['nullable', 'string'],
             'bio' => ['nullable', 'string'],
+            'foto_profil' => ['nullable', 'image', 'max:2048'],
         ], [
             'required' => ':attribute wajib diisi.',
             'string' => ':attribute harus berupa teks.',
             'email' => ':attribute harus berupa alamat email yang valid.',
             'date' => ':attribute harus berupa tanggal yang valid.',
+            'image' => ':attribute harus berupa file gambar.',
+            'max.file' => ':attribute tidak boleh lebih dari :max KB.',
             'max.string' => ':attribute tidak boleh lebih dari :max karakter.',
             'alpha_dash' => ':attribute hanya boleh berisi huruf, angka, tanda hubung, dan garis bawah.',
             'unique' => ':attribute sudah digunakan.',
@@ -57,7 +61,28 @@ class SettingsController extends Controller
             'tanggal_lahir' => 'tanggal lahir',
             'alamat' => 'alamat',
             'bio' => 'bio',
+            'foto_profil' => 'foto profil',
         ]);
+
+        $existingProfile = $user->profile;
+        $profileAttributes = [
+            'nama_lengkap' => $validated['nama_lengkap'],
+            'no_hp' => $validated['no_hp'] ?? null,
+            'tempat_lahir' => $validated['tempat_lahir'] ?? null,
+            'tanggal_lahir' => $validated['tanggal_lahir'] ?? null,
+            'alamat' => $validated['alamat'] ?? null,
+            'bio' => $validated['bio'] ?? null,
+        ];
+
+        if ($request->hasFile('foto_profil')) {
+            $newPhotoPath = $request->file('foto_profil')->store('profile-photos', 'public');
+
+            if (filled($existingProfile?->foto_profil) && !str_starts_with($existingProfile->foto_profil, 'http')) {
+                Storage::disk('public')->delete($existingProfile->foto_profil);
+            }
+
+            $profileAttributes['foto_profil'] = $newPhotoPath;
+        }
 
         $user->update([
             'username' => $validated['username'],
@@ -66,14 +91,7 @@ class SettingsController extends Controller
 
         $user->profile()->updateOrCreate([
             'user_id' => $user->id,
-        ], [
-            'nama_lengkap' => $validated['nama_lengkap'],
-            'no_hp' => $validated['no_hp'] ?? null,
-            'tempat_lahir' => $validated['tempat_lahir'] ?? null,
-            'tanggal_lahir' => $validated['tanggal_lahir'] ?? null,
-            'alamat' => $validated['alamat'] ?? null,
-            'bio' => $validated['bio'] ?? null,
-        ]);
+        ], $profileAttributes);
 
         return redirect()->route('settings.profile.edit')->with([
             'status' => 'Profil berhasil diperbarui.',
