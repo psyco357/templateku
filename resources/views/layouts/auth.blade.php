@@ -10,6 +10,10 @@
 
     <title>@hasSection('title')@yield('title')@else{{ $title ?? 'Dashboard' }}@endif | {{ config('app.name', 'Sistem Koperasi') }}</title>
 
+    <script>
+        window.formatRupiah ??= (value) => new Intl.NumberFormat('id-ID').format(Number(value || 0));
+    </script>
+
     <!-- Scripts -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 

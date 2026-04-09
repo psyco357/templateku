@@ -9,6 +9,10 @@
     <title>{{ config('app.name') }} - Cara Lebih Baik Kelola Payroll & Absensi Karyawan</title>
     <meta name="description" content="Software absensi dan payroll terbaik untuk kelola karyawan, gaji, cuti, dan HR dalam satu sistem terintegrasi.">
 
+    <script>
+        window.formatRupiah ??= (value) => new Intl.NumberFormat('id-ID').format(Number(value || 0));
+    </script>
+
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 
     <style>

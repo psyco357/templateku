@@ -5,7 +5,9 @@ import 'sweetalert2/dist/sweetalert2.min.css';
 window.Swal = Swal;
 
 const idrFormatter = new Intl.NumberFormat('id-ID');
-window.formatRupiah = (value) => idrFormatter.format(Number(value || 0));
+const formatRupiah = (value) => idrFormatter.format(Number(value || 0));
+
+window.formatRupiah ??= formatRupiah;
 
 Alpine.start();
 
@@ -27,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			const digits = normalizeDigits(displayInput.value);
 
 			hiddenInput.value = digits;
-			displayInput.value = digits ? 'Rp ' + window.formatRupiah(digits) : '';
+			displayInput.value = digits ? 'Rp ' + formatRupiah(digits) : '';
 		};
 
 		displayInput.addEventListener('input', syncValue);
