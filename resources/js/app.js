@@ -1,13 +1,16 @@
-import './bootstrap';
+import Alpine from './bootstrap';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
 
 window.Swal = Swal;
 
+const idrFormatter = new Intl.NumberFormat('id-ID');
+window.formatRupiah = (value) => idrFormatter.format(Number(value || 0));
+
+Alpine.start();
+
 document.addEventListener('DOMContentLoaded', () => {
-	const idrFormatter = new Intl.NumberFormat('id-ID');
 	const normalizeDigits = (value) => value.replace(/\D/g, '');
-	window.formatRupiah = (value) => idrFormatter.format(Number(value || 0));
 
 	document.querySelectorAll('[data-currency-input="idr"]').forEach((displayInput) => {
 		const hiddenInputId = displayInput.dataset.currencyTarget;

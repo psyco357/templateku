@@ -38,7 +38,7 @@ class PinjamanController extends Controller
         $anggotaOptions = $this->getAnggotaOptions($koperasi, $isAnggotaView ? $user?->id : null);
         $snapshots = $this->getSavingsSnapshots($koperasi, $anggotaOptions);
         $selectedAnggotaId = $isAnggotaView
-            ? (string) ($user?->anggota?->id ?? '')
+            ? (string) ($user?->resolveAnggotaId() ?? '')
             : $request->string('anggota_id')->toString();
 
         $pinjaman = $this->getAccessiblePinjamanQuery($koperasi, $user)
@@ -240,7 +240,7 @@ class PinjamanController extends Controller
         $snapshots = $this->getSavingsSnapshots($koperasi, $anggotaOptions);
 
         $filters = [
-            'anggota_id' => $isAnggotaView ? (string) ($user?->anggota?->id ?? '') : $request->string('anggota_id')->toString(),
+            'anggota_id' => $isAnggotaView ? (string) ($user?->resolveAnggotaId() ?? '') : $request->string('anggota_id')->toString(),
             'jumlah_pinjaman' => $request->string('jumlah_pinjaman')->toString(),
             'tenor_bulan' => $request->string('tenor_bulan')->toString(),
             'tanggal_pinjaman' => $request->string('tanggal_pinjaman')->toString() ?: now()->toDateString(),
@@ -328,7 +328,7 @@ class PinjamanController extends Controller
         $isAnggotaView = $user?->hasRole(User::ROLE_ANGGOTA) ?? false;
         $anggotaOptions = $this->getAnggotaOptions($koperasi, $isAnggotaView ? $user?->id : null);
         $filters = [
-            'anggota_id' => $isAnggotaView ? (string) ($user?->anggota?->id ?? '') : $request->string('anggota_id')->toString(),
+            'anggota_id' => $isAnggotaView ? (string) ($user?->resolveAnggotaId() ?? '') : $request->string('anggota_id')->toString(),
             'status' => $request->string('status')->toString(),
         ];
 
@@ -528,7 +528,7 @@ class PinjamanController extends Controller
         $user = $request->user();
 
         if ($user?->hasRole(User::ROLE_ANGGOTA)) {
-            $anggotaId = (int) ($user->anggota?->id ?? 0);
+            $anggotaId = (int) ($user->resolveAnggotaId() ?? 0);
 
             if ($anggotaId === 0) {
                 throw ValidationException::withMessages([

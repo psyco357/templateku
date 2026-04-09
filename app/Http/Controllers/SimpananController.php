@@ -493,7 +493,7 @@ class SimpananController extends Controller
     protected function getRecapData(Request $request, Koperasi $koperasi): array
     {
         $user = $request->user();
-        $anggotaId = $user?->hasRole(User::ROLE_ANGGOTA) ? (string) ($user->anggota?->id ?? '') : $request->string('anggota_id')->toString();
+        $anggotaId = $user?->hasRole(User::ROLE_ANGGOTA) ? (string) ($user?->resolveAnggotaId() ?? '') : $request->string('anggota_id')->toString();
         $jenisSimpananId = $request->string('jenis_simpanan_id')->toString();
 
         $rekap = DB::table('simpanan')
@@ -755,7 +755,7 @@ class SimpananController extends Controller
     {
         $user = $request->user();
         $isAnggotaView = $user?->hasRole(User::ROLE_ANGGOTA) ?? false;
-        $anggotaId = $isAnggotaView ? (string) ($user->anggota?->id ?? '') : $request->string('anggota_id')->toString();
+        $anggotaId = $isAnggotaView ? (string) ($user?->resolveAnggotaId() ?? '') : $request->string('anggota_id')->toString();
         $jenisSimpananId = $request->string('jenis_simpanan_id')->toString();
         $startDate = $request->string('start_date')->toString();
         $endDate = $request->string('end_date')->toString();

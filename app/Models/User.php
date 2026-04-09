@@ -96,6 +96,26 @@ class User extends Authenticatable
         );
     }
 
+    public function resolveAnggota(): ?AnggotaModel
+    {
+        if ($this->relationLoaded('anggota') && $this->anggota !== null) {
+            return $this->anggota;
+        }
+
+        $profile = $this->relationLoaded('profile') ? $this->profile : $this->profile()->first();
+
+        if ($profile === null) {
+            return null;
+        }
+
+        return $profile->anggota()->first();
+    }
+
+    public function resolveAnggotaId(): ?int
+    {
+        return $this->resolveAnggota()?->id;
+    }
+
     public function sendPasswordResetNotification($token): void
     {
         $this->notify(new QueuedResetPasswordNotification($token));
