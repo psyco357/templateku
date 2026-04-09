@@ -41,6 +41,7 @@ class SimpananController extends Controller
 
         $anggotaOptions = $this->getAnggotaOptions($koperasi);
         $jenisSimpanan = $this->getJenisSimpananOptions($koperasi);
+        // dd($anggotaOptions, $jenisSimpanan);
 
         $transaksi = Simpanan::query()
             ->with(['anggota.profile.user', 'jenisSimpanan', 'periodeBuku'])
