@@ -127,6 +127,10 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:pengurus,founder')
         ->name('simpanan.transaksi');
 
+    Route::get('/simpanan/anggota/search', [SimpananController::class, 'searchAnggota'])
+        ->middleware('role:pengurus,founder')
+        ->name('simpanan.anggota.search');
+
     Route::get('/simpanan/jenis', [SimpananController::class, 'masterJenis'])
         ->middleware('role:pengurus,founder')
         ->name('simpanan.jenis.index');
@@ -198,6 +202,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/pinjaman/pengajuan', [PinjamanController::class, 'store'])
         ->middleware('role:anggota,pengurus,founder')
         ->name('pinjaman.store');
+
+    Route::get('/pinjaman/anggota/search', [PinjamanController::class, 'searchAnggota'])
+        ->middleware('role:anggota,pengurus,founder')
+        ->name('pinjaman.anggota.search');
 
     Route::patch('/pinjaman/{pinjaman}/approve', [PinjamanController::class, 'approve'])
         ->middleware('role:pengurus,founder')

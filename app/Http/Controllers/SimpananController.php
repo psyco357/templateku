@@ -11,6 +11,7 @@ use App\Models\SimpananAudit;
 use App\Models\User;
 use App\Services\JournalPostingService;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -85,11 +86,37 @@ class SimpananController extends Controller
         return view('pages.simpanan.index', [
             'koperasi' => $koperasi,
             'anggotaOptions' => $anggotaOptions,
+            'selectedAnggotaOption' => $this->resolveSelectedAnggotaOption($koperasi, (int) old('anggota_id', 0)),
             'jenisSimpanan' => $jenisSimpanan,
             'transaksi' => $transaksi,
             'saldoPerJenis' => $saldoPerJenis,
             'filters' => $filters,
             'transactionStatuses' => Simpanan::statuses(),
+        ]);
+    }
+
+    public function searchAnggota(Request $request): JsonResponse
+    {
+        $koperasi = $this->getActiveKoperasi();
+        abort_unless($koperasi, 404);
+
+        $term = trim($request->string('q')->toString());
+
+        if (mb_strlen($term) < 3) {
+            return response()->json([
+                'data' => [],
+            ]);
+        }
+
+        $anggota = $this->searchAnggotaOptions($koperasi, $term, null, 4)
+            ->map(fn(AnggotaModel $item) => [
+                'id' => $item->id,
+                'label' => sprintf('%s - %s', $item->no_anggota, $item->profile?->nama_lengkap ?? 'Tanpa nama'),
+            ])
+            ->values();
+
+        return response()->json([
+            'data' => $anggota,
         ]);
     }
 
@@ -537,6 +564,41 @@ class SimpananController extends Controller
             })
             ->orderBy('no_anggota')
             ->get();
+    }
+
+    protected function searchAnggotaOptions(Koperasi $koperasi, string $term, ?int $userId = null, int $limit = 4): Collection
+    {
+        return AnggotaModel::query()
+            ->with('profile.user')
+            ->whereHas('profile.user', function ($query) use ($koperasi, $userId) {
+                $query->where('koperasi_id', $koperasi->id);
+
+                if ($userId !== null) {
+                    $query->whereKey($userId);
+                }
+            })
+            ->where(function (Builder $query) use ($term) {
+                $query->where('no_anggota', 'like', "%{$term}%")
+                    ->orWhereHas('profile', function (Builder $profileQuery) use ($term) {
+                        $profileQuery->where('nama_lengkap', 'like', "%{$term}%");
+                    });
+            })
+            ->orderBy('no_anggota')
+            ->limit($limit)
+            ->get();
+    }
+
+    protected function resolveSelectedAnggotaOption(Koperasi $koperasi, int $anggotaId): ?AnggotaModel
+    {
+        if ($anggotaId <= 0) {
+            return null;
+        }
+
+        return AnggotaModel::query()
+            ->with('profile.user')
+            ->whereKey($anggotaId)
+            ->whereHas('profile.user', fn(Builder $query) => $query->where('koperasi_id', $koperasi->id))
+            ->first();
     }
 
     protected function getJenisSimpananOptions(Koperasi $koperasi): Collection

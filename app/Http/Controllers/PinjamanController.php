@@ -12,6 +12,7 @@ use App\Models\Simpanan;
 use App\Models\User;
 use App\Services\JournalPostingService;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -53,6 +54,7 @@ class PinjamanController extends Controller
         return view('pages.pinjaman.pengajuan', [
             'koperasi' => $koperasi,
             'anggotaOptions' => $anggotaOptions,
+            'selectedAnggotaOption' => $this->resolveSelectedAnggotaOption($koperasi, (int) old('anggota_id', (int) $selectedAnggotaId)),
             'anggotaSnapshots' => $snapshots,
             'pinjaman' => $pinjaman,
             'selectedAnggotaId' => $selectedAnggotaId,
@@ -61,6 +63,33 @@ class PinjamanController extends Controller
             'monthlyInterest' => Pinjaman::DEFAULT_MONTHLY_INTEREST,
             'paymentDay' => Pinjaman::DEFAULT_PAYMENT_DAY,
             'maxSavingsRatio' => Pinjaman::MAX_SAVINGS_RATIO,
+        ]);
+    }
+
+    public function searchAnggota(Request $request): JsonResponse
+    {
+        $koperasi = $this->getActiveKoperasi();
+        abort_unless($koperasi, 404);
+
+        $term = trim($request->string('q')->toString());
+        $user = $request->user();
+        $userId = $user?->hasRole(User::ROLE_ANGGOTA) ? $user?->id : null;
+
+        if (mb_strlen($term) < 3) {
+            return response()->json([
+                'data' => [],
+            ]);
+        }
+
+        $anggota = $this->searchAnggotaOptions($koperasi, $term, $userId, 4)
+            ->map(fn(AnggotaModel $item) => [
+                'id' => $item->id,
+                'label' => sprintf('%s - %s', $item->no_anggota, $item->profile?->nama_lengkap ?? 'Tanpa nama'),
+            ])
+            ->values();
+
+        return response()->json([
+            'data' => $anggota,
         ]);
     }
 
@@ -446,6 +475,41 @@ class PinjamanController extends Controller
             })
             ->orderBy('no_anggota')
             ->get();
+    }
+
+    protected function searchAnggotaOptions(Koperasi $koperasi, string $term, ?int $userId = null, int $limit = 4): Collection
+    {
+        return AnggotaModel::query()
+            ->with('profile.user')
+            ->whereHas('profile.user', function ($query) use ($koperasi, $userId) {
+                $query->where('koperasi_id', $koperasi->id);
+
+                if ($userId !== null) {
+                    $query->whereKey($userId);
+                }
+            })
+            ->where(function (Builder $query) use ($term) {
+                $query->where('no_anggota', 'like', "%{$term}%")
+                    ->orWhereHas('profile', function (Builder $profileQuery) use ($term) {
+                        $profileQuery->where('nama_lengkap', 'like', "%{$term}%");
+                    });
+            })
+            ->orderBy('no_anggota')
+            ->limit($limit)
+            ->get();
+    }
+
+    protected function resolveSelectedAnggotaOption(Koperasi $koperasi, int $anggotaId): ?AnggotaModel
+    {
+        if ($anggotaId <= 0) {
+            return null;
+        }
+
+        return AnggotaModel::query()
+            ->with('profile.user')
+            ->whereKey($anggotaId)
+            ->whereHas('profile.user', fn(Builder $query) => $query->where('koperasi_id', $koperasi->id))
+            ->first();
     }
 
     protected function getOwnedAnggota(Koperasi $koperasi, int $anggotaId): AnggotaModel

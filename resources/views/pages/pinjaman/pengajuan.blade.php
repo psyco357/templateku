@@ -3,12 +3,19 @@
 @section('title', 'Pengajuan Pinjaman')
 
 @section('content')
+@php
+$selectedAnggotaLabel = $selectedAnggotaOption
+? $selectedAnggotaOption->no_anggota .
+' - ' .
+($selectedAnggotaOption->profile?->nama_lengkap ?? 'Tanpa nama')
+: '';
+@endphp
 <div class="space-y-6"
     x-data="{
         snapshots: @js($anggotaSnapshots),
         selectedAnggotaId: '{{ old('anggota_id', $selectedAnggotaId) }}',
         formatRupiah(value) {
-            return new Intl.NumberFormat('id-ID').format(Number(value || 0));
+            return window.formatRupiah(value);
         },
         get selectedSnapshot() {
             const snapshot = this.snapshots[this.selectedAnggotaId];
@@ -51,12 +58,16 @@
                     @else
                     <div>
                         <label for="anggota_id" class="mb-2 block text-sm font-medium text-slate-700">Anggota</label>
-                        <select id="anggota_id" name="anggota_id" x-model="selectedAnggotaId" class="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200">
-                            <option value="">Pilih anggota</option>
-                            @foreach ($anggotaOptions as $anggota)
-                            <option value="{{ $anggota->id }}">{{ $anggota->no_anggota }} - {{ $anggota->profile?->nama_lengkap ?? 'Tanpa nama' }}</option>
-                            @endforeach
-                        </select>
+                        <div class="relative" data-anggota-search data-search-url="{{ route('pinjaman.anggota.search') }}">
+                            <input type="hidden" id="anggota_id" name="anggota_id" x-model="selectedAnggotaId" value="{{ old('anggota_id', $selectedAnggotaId) }}">
+                            <input type="text" id="anggota_lookup"
+                                value="{{ old('anggota_id', $selectedAnggotaId) ? $selectedAnggotaLabel : '' }}" autocomplete="off"
+                                placeholder="Ketik minimal 3 huruf nama atau nomor anggota"
+                                class="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200">
+                            <div class="mt-2 hidden rounded-xl border border-slate-200 bg-white shadow-lg"
+                                data-search-results></div>
+                        </div>
+                        <p class="mt-2 text-xs text-slate-500">Cari berdasarkan nama atau nomor anggota. Hasil muncul setelah 3 karakter, maksimal 4 anggota.</p>
                         @error('anggota_id')
                         <p class="mt-2 text-sm text-rose-600">{{ $message }}</p>
                         @enderror
@@ -76,7 +87,13 @@
 
                     <div>
                         <label for="jumlah_pinjaman" class="mb-2 block text-sm font-medium text-slate-700">Jumlah Pinjaman</label>
-                        <input type="number" step="0.01" min="0.01" id="jumlah_pinjaman" name="jumlah_pinjaman" value="{{ old('jumlah_pinjaman') }}" class="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200" placeholder="0.00">
+                        <input type="hidden" id="jumlah_pinjaman" name="jumlah_pinjaman" value="{{ old('jumlah_pinjaman') }}">
+                        <input type="text" inputmode="numeric" id="jumlah_pinjaman_display"
+                            value="{{ old('jumlah_pinjaman') ? 'Rp ' . number_format((float) old('jumlah_pinjaman'), 0, ',', '.') : '' }}"
+                            data-currency-input="idr" data-currency-target="jumlah_pinjaman"
+                            class="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                            placeholder="Rp 0">
+                        <p class="mt-2 text-xs text-slate-500">Masukkan nominal dalam rupiah tanpa tanda minus.</p>
                         @error('jumlah_pinjaman')
                         <p class="mt-2 text-sm text-rose-600">{{ $message }}</p>
                         @enderror

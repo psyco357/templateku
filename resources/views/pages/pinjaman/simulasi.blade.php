@@ -44,7 +44,12 @@ $exceedsLimit = $selectedSnapshot && $requestedAmount !== null && $requestedAmou
 
             <div>
                 <label for="jumlah_pinjaman" class="mb-2 block text-sm font-medium text-slate-700">Jumlah Pinjaman</label>
-                <input type="number" step="0.01" min="0.01" id="jumlah_pinjaman" name="jumlah_pinjaman" value="{{ $filters['jumlah_pinjaman'] }}" class="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200">
+                <input type="hidden" id="jumlah_pinjaman" name="jumlah_pinjaman" value="{{ $filters['jumlah_pinjaman'] }}">
+                <input type="text" inputmode="numeric" id="jumlah_pinjaman_display"
+                    value="{{ $filters['jumlah_pinjaman'] !== '' ? 'Rp ' . number_format((float) $filters['jumlah_pinjaman'], 0, ',', '.') : '' }}"
+                    data-currency-input="idr" data-currency-target="jumlah_pinjaman"
+                    class="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    placeholder="Rp 0">
             </div>
 
             <div>

@@ -244,7 +244,7 @@
 
             <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                 <p class="font-medium text-slate-900" x-text="selectedAssetName"></p>
-                <p class="mt-1">Nilai perolehan: Rp <span x-text="new Intl.NumberFormat('id-ID').format(Number(selectedAssetValue || 0))"></span></p>
+                <p class="mt-1">Nilai perolehan: Rp <span x-text="window.formatRupiah(selectedAssetValue || 0)"></span></p>
             </div>
 
             <form :action="deactivateFormAction" method="POST" class="mt-6 space-y-4">
