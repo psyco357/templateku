@@ -8,7 +8,7 @@ $currentProfile = $currentUser?->profile;
 $displayName = $currentProfile?->nama_lengkap ?: $currentUser?->username ?: 'User';
 $displayEmail = $currentUser?->email ?: '-';
 $avatarPath = $currentProfile?->foto_profil;
-$avatarUrl = asset('images/user/owner.png');
+$avatarUrl = asset('images/profil/cowok.png'); // Gambar default yang baru
 
 if (filled($avatarPath)) {
 if (Str::startsWith($avatarPath, ['http://', 'https://'])) {

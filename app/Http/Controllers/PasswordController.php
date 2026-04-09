@@ -32,7 +32,7 @@ class PasswordController extends Controller
 
         return back()->with([
             'status' => $status === Password::RESET_LINK_SENT
-                ? 'Link reset password berhasil dikirim. Silakan cek email Anda.'
+                ? 'Permintaan reset password berhasil dimasukkan ke antrean email. Silakan cek email Anda setelah antrean diproses.'
                 : __($status),
             'status_type' => $status === Password::RESET_LINK_SENT ? 'success' : 'info',
         ]);

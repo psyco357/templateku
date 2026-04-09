@@ -122,11 +122,11 @@ window.addEventListener('resize', checkMobile);">
         @include('layouts.backdrop')
         @include('layouts.sidebar')
 
-        <div class="flex-1 transition-all duration-300 ease-in-out"
+        <div class="min-w-0 flex-1 transition-all duration-300 ease-in-out"
             :class="{
-                'xl:ml-[290px]': $store.sidebar.isExpanded || $store.sidebar.isHovered,
-                'xl:ml-[90px]': !$store.sidebar.isExpanded && !$store.sidebar.isHovered,
-                'ml-0': $store.sidebar.isMobileOpen
+                'xl:ml-[290px] xl:w-[calc(100%-290px)]': $store.sidebar.isExpanded || $store.sidebar.isHovered,
+                'xl:ml-[90px] xl:w-[calc(100%-90px)]': !$store.sidebar.isExpanded && !$store.sidebar.isHovered,
+                'ml-0 w-full': $store.sidebar.isMobileOpen
             }">
             <!-- app header start -->
             @include('layouts.app-header')

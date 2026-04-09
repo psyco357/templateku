@@ -148,15 +148,20 @@ composer run dev
 Perintah ini akan menjalankan:
 
 - server Laravel
-- queue listener
+- queue worker untuk antrean `mail` dan `default`
 - Vite dev server
+
+Gunakan perintah ini sebagai cara utama saat development. Dengan begitu email reset password dan notifikasi lain akan langsung diproses tanpa perlu menyalakan worker secara manual.
 
 Jika ingin menjalankan manual secara terpisah:
 
 ```bash
-php artisan serve
+php artisan serve --host=127.0.0.1 --port=8000
+php artisan queue:work --queue=mail,default
 npm run dev
 ```
+
+Catatan: email reset password dan notifikasi email lain diproses lewat queue. Jika queue worker tidak berjalan, request web tetap sukses tetapi email tidak akan terkirim sampai antrean diproses.
 
 Untuk build asset production:
 

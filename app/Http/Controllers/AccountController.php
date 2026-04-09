@@ -143,7 +143,7 @@ class AccountController extends Controller
         }
 
         return redirect()->route('accounts.show', $user)->with([
-            'status' => "Link reset password berhasil dikirim ke email {$user->email}.",
+            'status' => "Permintaan reset password berhasil dimasukkan ke antrean email untuk {$user->email}.",
             'status_type' => 'success',
         ]);
     }
