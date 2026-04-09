@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AnggotaModel;
+use App\Models\Koperasi;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
@@ -91,6 +92,8 @@ class AnggotaController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        $koperasi = $this->resolveCurrentKoperasi();
+
         $validated = $request->validate([
             'nama_lengkap' => ['required', 'string', 'max:255'],
             'username' => ['required', 'string', 'max:255', 'alpha_dash', 'unique:users,username'],
@@ -135,8 +138,9 @@ class AnggotaController extends Controller
             $request->boolean('auto_generate_no_anggota')
         );
 
-        DB::transaction(function () use ($validated) {
+        DB::transaction(function () use ($validated, $koperasi) {
             $user = User::create([
+                'koperasi_id' => $koperasi->id,
                 'username' => $validated['username'],
                 'email' => $validated['email'],
                 'password' => $validated['password'],
@@ -317,5 +321,10 @@ class AnggotaController extends Controller
         } while ($memberNumberQuery->exists());
 
         return $generatedNumber;
+    }
+
+    protected function resolveCurrentKoperasi(): Koperasi
+    {
+        return Auth::user()?->koperasi ?? Koperasi::query()->firstOrFail();
     }
 }
